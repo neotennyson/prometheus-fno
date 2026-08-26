@@ -15,3 +15,4 @@ logs/*.log
 logs/session_state.json
 logs/news.db
 .env
+logs/*.json

@@ -76,7 +76,9 @@ class PaperBroker(BrokerBase):
             if pos.qty == 0:
                 del self.pos_book[key]
         elif pos:
-            total = pos.avg_px * abs(pos.qty) + px * qty
+            # adding to an existing position (either direction): average on
+            # ABSOLUTE quantities or shorts get a corrupted avg price
+            total = pos.avg_px * abs(pos.qty) + px * abs(signed)
             pos.qty += signed
             pos.avg_px = total / abs(pos.qty)
         else:
@@ -98,9 +100,9 @@ class PaperBroker(BrokerBase):
 
     def flat_position(self, seg: str, sid: str, tag: str = "") -> dict | None:
         key = f"{seg}:{sid}"
-        if key not in self.positions:
+        if key not in self.pos_book:
             return None
-        pos = self.positions[key]
+        pos = self.pos_book[key]
         side = "SELL" if pos.qty > 0 else "BUY"
         return self.market_order(seg, sid, abs(pos.qty), side, tag=tag or pos.strategy)
 

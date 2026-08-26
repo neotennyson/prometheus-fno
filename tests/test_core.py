@@ -42,3 +42,48 @@ def test_futures_costs():
     r = cm.futures_round_trip(25000.0, 1, 65)
     val = 25000 * 65
     assert abs(r["total"] - (val * 0.0005 + val * 2 * 0.0000173 + val * 2 * 0.000001 + val * 0.00002 + 40 + 0.18 * (40 + val * 2 * 0.0000173 + val * 2 * 0.000001) + 195)) < 1.0
+
+
+def test_paper_broker_short_add_avg_price(tmp_path):
+    """Adding to a SHORT must average on absolute quantities.
+    Regression: signed qty corrupted the average price."""
+    from src.costs import CostModel
+    from src.exec.paper_broker import PaperBroker
+    px = {"px": 100.0}
+
+    def q(seg, sid):
+        return px["px"]
+
+    pb = PaperBroker(q, CostModel(), db_path=str(tmp_path / "t.db"),
+                     slippage_pct=0.0, min_slip=0.0)
+    pb.market_order("NSE_FNO", "13", 1, "SELL")     # short 1 @ 100
+    px["px"] = 110.0
+    pb.market_order("NSE_FNO", "13", 1, "SELL")     # short 1 more @ 110
+    pos = pb.pos_book["NSE_FNO:13"]
+    assert pos.qty == -2
+    assert abs(pos.avg_px - 105.0) < 1e-6           # (100+110)/2, not (100-110)/2
+
+
+def test_paper_broker_flat_position(tmp_path):
+    """flat_position used to reference the method instead of the book (TypeError)."""
+    from src.costs import CostModel
+    from src.exec.paper_broker import PaperBroker
+    px = {"px": 100.0}
+
+    def q(seg, sid):
+        return px["px"]
+
+    pb = PaperBroker(q, CostModel(), db_path=str(tmp_path / "t2.db"),
+                     slippage_pct=0.0, min_slip=0.0)
+    pb.market_order("NSE_FNO", "13", 1, "BUY")
+    assert pb.flat_position("NSE_FNO", "13") is not None
+    assert "NSE_FNO:13" not in pb.pos_book
+    assert pb.flat_position("NSE_FNO", "13") is None    # nothing left to flat
+
+
+def test_ist_clock_is_ist_even_on_utc_host():
+    """Session clock must be pinned to Asia/Kolkata (UTC VPS deployment safety)."""
+    from src.orchestrator import ist_now
+    from zoneinfo import ZoneInfo
+    now = ist_now()
+    assert now.utcoffset().total_seconds() == 19800    # +5:30

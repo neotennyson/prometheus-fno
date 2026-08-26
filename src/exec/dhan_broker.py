@@ -47,10 +47,3 @@ class DhanBroker(BrokerBase):
         if self.dry_run:
             return {}
         return self.c._get("/positions")
-
-    @staticmethod
-    def option_sids(strike: int, kind: str, base_id: str = "49081") -> tuple[str, str]:
-        suffix = "CE" if kind.upper() in ("CE", "C") else "PE"
-        year2 = "26"
-        sid = f"{base_id}{year2}{strike}{suffix}"
-        return sid, suffix

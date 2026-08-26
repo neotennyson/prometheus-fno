@@ -13,6 +13,7 @@ Run:  .venv/bin/python -m src.news_service          (http://127.0.0.1:8791)
 """
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import threading
@@ -29,7 +30,7 @@ except ImportError:
     feedparser = None
 
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
     from pydantic import BaseModel
 except ImportError as e:
@@ -150,8 +151,8 @@ class MacroPoller(threading.Thread):
                     continue
                 self.components[name] = float(closes.iloc[-1] / closes.iloc[-2] - 1.0)
             self.updated = datetime.now().astimezone().isoformat()
-        except Exception:
-            pass  # keep last known values; never crash the monitor
+        except Exception as exc:
+            logging.warning("macro fetch failed, keeping last values: %s", exc)
 
     def run(self):
         while not self._stop.is_set():
@@ -172,6 +173,7 @@ class NewsStore:
     def __init__(self, db_path: Path = DB_PATH):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.Lock()   # poller + API threads share this conn
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS events(
                ts TEXT, source TEXT, title TEXT, impact INTEGER, keyword TEXT,
@@ -184,9 +186,10 @@ class NewsStore:
         rec = {"ts": ts, "source": source, "title": title[:300],
                "impact": lvl, "keyword": kw, "seen_at": datetime.now().isoformat()}
         try:
-            self.conn.execute("INSERT OR REPLACE INTO events VALUES(?,?,?,?,?,?)",
-                              (rec["ts"], rec["source"], rec["title"], lvl, kw, rec["seen_at"]))
-            self.conn.commit()
+            with self._lock:
+                self.conn.execute("INSERT OR REPLACE INTO events VALUES(?,?,?,?,?,?)",
+                                  (rec["ts"], rec["source"], rec["title"], lvl, kw, rec["seen_at"]))
+                self.conn.commit()
         except Exception:
             pass
         self.recent.appendleft(rec)
@@ -268,7 +271,10 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         macro.start()
 
     @app.post("/webhook")
-    def webhook(a: Alert):
+    def webhook(a: Alert, request: Request):
+        secret = str(cfg.get("webhook_secret", "") or "")
+        if secret and request.headers.get("x-argus-secret", "") != secret:
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
         rec = store.add(datetime.now().astimezone().isoformat(), a.source, a.title, a.summary)
         return {"ok": True, "impact": rec["impact"], "keyword": rec["keyword"]}
 

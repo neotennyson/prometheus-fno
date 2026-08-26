@@ -20,7 +20,10 @@ from src.risk import RiskManager
 
 
 def ist_now() -> datetime:
-    return datetime.now().astimezone()
+    """Session clock pinned to IST regardless of host timezone -- a UTC VPS
+    must never shift entry windows or square-off by 5h30m."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Kolkata"))
 
 
 def tmin(hhmm: str) -> int:
@@ -378,7 +381,6 @@ class Orchestrator:
                 self.close_iron_fly(why)
             elif key in ("gap", "overnight"):
                 sid = pos_like["sid"]
-                dir_mult = 1 if pos_like.get("dir", 1) > 0 else 1
                 held_side_long = key == "overnight" or pos_like.get("dir", 1) > 0
                 self.broker.market_order(self.seg, sid, self.lot,
                                          "SELL" if held_side_long else "BUY", tag=f"{key}:{why}")

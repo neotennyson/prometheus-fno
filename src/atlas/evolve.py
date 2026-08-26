@@ -27,7 +27,7 @@ OOS_START = pd.Timestamp("2024-01-01")
 
 def spec_hash(family: str, params: dict, filt: str, exit_spec: tuple) -> str:
     raw = json.dumps([family, params, filt, list(exit_spec)], sort_keys=True)
-    return hashlib.sha1(raw.encode()).hexdigest()[:12]
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 def enumerate_specs() -> list[dict]:

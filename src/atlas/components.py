@@ -260,16 +260,18 @@ def sig_calm_bounce(aux, p):
 
 
 def sig_range_expansion(aux, p):
-    """Vol-expansion onset: quietest session in a month, then today expands to
-    k× ATR. Expansion begets expansion -- ride toward the close direction."""
+    """Vol-expansion onset: today's true range explodes to k× ATR and dwarfs the
+    quietest session of the prior month -- coil breaking loose. Ride toward the
+    close direction."""
     idle_n = int(p.get("idle_n", 20))
     k = float(p.get("k_atr", 1.6))
     tr = np.abs(aux["c"] - np.roll(aux["c"], 1))
-    idle = aux["atr"] * idle_n * 0 + pd.Series(tr).rolling(idle_n).min().to_numpy()
+    tr[0] = aux["h"][0] - aux["l"][0]
+    idle_min = pd.Series(tr).shift(1).rolling(idle_n).min().to_numpy()
     expanded = tr >= k * aux["atr"]
-    was_quiet = tr <= idle * float(p.get("quiet_k", 1.15))
-    up = expanded & was_quiet & (aux["c"] > aux["o"])
-    dn = expanded & was_quiet & (aux["c"] < aux["o"])
+    dwarfed_quiet = tr >= float(p.get("burst_k", 1.5)) * idle_min
+    up = expanded & dwarfed_quiet & (aux["c"] > aux["o"])
+    dn = expanded & dwarfed_quiet & (aux["c"] < aux["o"])
     return up, dn
 
 

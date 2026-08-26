@@ -27,10 +27,16 @@ def _clip01(x: float) -> float:
 
 def conviction_score(oos_stats: dict,
                      plateau: float | None = None,
-                     quarters_hit: float | None = None) -> float:
+                     quarters_hit: float | None = None,
+                     min_trades: int = 30) -> float:
     """oos_stats: perf_stats()-style dict (needs sharpe, max_dd_pct, profit_factor,
     trade_days, days). plateau: fraction of sibling combos with positive OOS pnl
-    (None -> neutral 0.5). quarters_hit: fraction of profitable quarters (None -> 0.5)."""
+    (None -> neutral 0.5). quarters_hit: fraction of profitable quarters
+    (None -> 0.5).
+
+    Statistical-reliability penalty: a Sharpe estimated from < min_trades trades
+    is mostly luck, so scores shrink by sqrt(n/min_trades). Four winning trades
+    must never outrank two hundred honest ones."""
     if not oos_stats or oos_stats.get("days", 0) == 0 or oos_stats.get("trade_days", 0) == 0:
         return 0.0
     sharpe_c = _clip01(math.tanh(float(oos_stats.get("sharpe", 0.0)) / 2.0))
@@ -43,7 +49,10 @@ def conviction_score(oos_stats: dict,
     cov_c = _clip01(cov_raw / 0.80)          # >=80% of sessions = full marks
     parts = {"sharpe": sharpe_c, "drawdown": dd_c, "profit_factor": pf_c,
              "consistency": cons_c, "plateau": plat_c, "coverage": cov_c}
-    return round(sum(w * parts[k] for k, w in WEIGHTS.items()), 4)
+    base = sum(w * parts[k] for k, w in WEIGHTS.items())
+    n = int(oos_stats.get("trade_days", 0))
+    reliability = min(1.0, (n / max(min_trades, 1)) ** 0.5)
+    return round(base * reliability, 4)
 
 
 def quarter_consistency(daily_pnl) -> float:

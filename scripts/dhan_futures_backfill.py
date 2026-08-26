@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
+import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "dhan"
@@ -26,10 +27,11 @@ def get_client():
     return DhanClient(access_token=tok, client_id=cid)
 
 
-def hist_chunk(client, frm: date, to: date, interval: int) -> pd.DataFrame:
+def hist_chunk(client, frm: date, to: date, interval: int, expiry_code: int = 1) -> pd.DataFrame:
     body = {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
-            "expiryCode": 0, "oi": False, "fromDate": str(frm), "toDate": str(to),
-            "interval": interval}
+            "expiryCode": expiry_code, "oi": False, "fromDate": str(frm), "toDate": str(to)}
+    if interval > 0:
+        body["interval"] = interval
     r = client._post("/charts/historical" if interval == 0 else "/charts/intraday", body)
     rows = r.get("data", {})
     if not rows or not rows.get("timestamp"):
@@ -47,11 +49,29 @@ def main():
     client = get_client()
 
     if args.probe:
-        r = client._post("/charts/historical", {
-            "securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
-            "expiryCode": 0, "oi": False, "fromDate": str(date.today() - timedelta(days=30)),
-            "toDate": str(date.today() - timedelta(days=25)), "interval": 15})
-        print("[probe] FUTIDX daily sample:", str(r)[:300])
+        # try a matrix of variants; print Dhan's error body so rejections explain themselves
+        variants = [
+            ("hist exp=1 oi=F", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
+                                 "instrument": "FUTIDX", "expiryCode": 1, "oi": False,
+                                 "fromDate": str(date.today() - timedelta(days=30)),
+                                 "toDate": str(date.today() - timedelta(days=25))}),
+            ("hist exp=1 oi=T", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
+                                 "instrument": "FUTIDX", "expiryCode": 1, "oi": True,
+                                 "fromDate": str(date.today() - timedelta(days=30)),
+                                 "toDate": str(date.today() - timedelta(days=25))}),
+            ("intraday exp=1 1min", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
+                                     "instrument": "FUTIDX", "expiryCode": 1, "oi": False,
+                                     "fromDate": str(date.today() - timedelta(days=5)),
+                                     "toDate": str(date.today() - timedelta(days=4)),
+                                     "interval": 1}),
+        ]
+        for name, body in variants:
+            try:
+                r = client._post("/charts/intraday" if "interval" in body else "/charts/historical", body)
+                n = len((r.get("data") or {}).get("timestamp") or [])
+                print(f"[probe] {name}: OK, {n} bars")
+            except requests.HTTPError as e:
+                print(f"[probe] {name}: HTTP {e.response.status_code} -> {e.response.text[:200]}")
         return
 
     OUT.mkdir(parents=True, exist_ok=True)

@@ -157,7 +157,7 @@ regenerate them.
 
 | When | Command | Purpose |
 |------|---------|---------|
-| Market day | `scripts/run_paper.py --mode paper` | session loop, kill switches armed |
+| Market day |  `scripts/run_paper.py --mode paper` | session loop, kill switches armed |
 | Always | `python -m src.news_service` | Argus watches 24/7 on :8791 |
 | Weekly cron | `scripts/evolve.py` | next evolution generation |
 | Weekly cron | `scripts/download_history.py` (+ `dhan_backfill.py`) | refresh data |

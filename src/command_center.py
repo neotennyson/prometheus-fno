@@ -565,14 +565,14 @@ def main():
 <div class="card" style="font-size:.9rem;line-height:2.1">
 <b>Every trading day</b><br>
 &nbsp;<code>.venv/bin/python scripts/run_paper.py --mode paper</code> — session loop (09:15–15:30 IST)<br>
-&nbsp;<code>.venv/bin/python -m src.news_service</code> — ARGUS watches 24/7 on :8791<br>
+&nbsp;<code>.venv/bin/python -m src.news_service</code> — ARGUS watches 24/7 on :8791nbsp;<code>bash scripts/argus.sh start</code> — ARGUS watches 24/7 on :8791 (stop: argus.sh stop)<br>
 <b>Weekly (cron Sunday)</b><br>
 &nbsp;<code>.venv/bin/python scripts/evolve.py</code> — next evolution generation<br>
 &nbsp;<code>.venv/bin/python scripts/download_history.py && .venv/bin/python scripts/dhan_backfill.py</code> — refresh data<br>
 <b>Monthly</b><br>
 &nbsp;<code>.venv/bin/python scripts/run_backtest.py</code> — re-validate EMBER engines<br>
 <b>This dashboard</b><br>
-&nbsp;<code>.venv/bin/streamlit run src/command_center.py</code>
+&nbsp;<code>.venv/bin/streamlit run src/command_center.py</code>nbsp;<code>bash scripts/launch.sh</code> — one command: ARGUS + dashboard
 </div>""", unsafe_allow_html=True)
         ladder = [
             ("BACKTEST", "done", "full cost stack · IS/OOS split · plateau + reliability gates"),

@@ -94,6 +94,9 @@ def test_orchestrator_event_blocks_entries(tmp_path, monkeypatch):
 
     with monkeypatch.context() as m:
         m.setattr(orc, "ist_now", FakeDT.now)
+        # isolate from a live ARGUS service: this test targets the LOCAL
+        # EventRisk fallback path specifically
+        m.setattr(o, "_news_service_status", lambda: None)
         out = o.run_once()
     joined = " ".join(map(str, out["actions"]))
     assert "EVENT_PAUSE" in joined

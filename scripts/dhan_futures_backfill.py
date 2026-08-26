@@ -49,25 +49,33 @@ def main():
     client = get_client()
 
     if args.probe:
-        # try a matrix of variants; print Dhan's error body so rejections explain themselves
+        # variants: contract securityId (from scrip master) vs underlying id; INDEX fallbacks
+        fut_sid = "68407"  # NIFTY Sep-2026 FUT (near month) from api-scrip-master.csv
+        day = str(date.today() - timedelta(days=1))   # recent trading day
+        day2 = str(date.today())
         variants = [
-            ("hist exp=1 oi=F", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
-                                 "instrument": "FUTIDX", "expiryCode": 1, "oi": False,
-                                 "fromDate": str(date.today() - timedelta(days=30)),
-                                 "toDate": str(date.today() - timedelta(days=25))}),
-            ("hist exp=1 oi=T", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
-                                 "instrument": "FUTIDX", "expiryCode": 1, "oi": True,
-                                 "fromDate": str(date.today() - timedelta(days=30)),
-                                 "toDate": str(date.today() - timedelta(days=25))}),
-            ("intraday exp=1 1min", {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO",
-                                     "instrument": "FUTIDX", "expiryCode": 1, "oi": False,
-                                     "fromDate": str(date.today() - timedelta(days=5)),
-                                     "toDate": str(date.today() - timedelta(days=4)),
-                                     "interval": 1}),
+            ("hist FUT contract-id exp0", "/charts/historical", {
+                "securityId": fut_sid, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
+                "expiryCode": 0, "oi": False, "fromDate": str(date.today() - timedelta(days=30)),
+                "toDate": day2}),
+            ("hist FUT underlying exp1 (control)", "/charts/historical", {
+                "securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
+                "expiryCode": 1, "oi": False, "fromDate": str(date.today() - timedelta(days=30)),
+                "toDate": day2}),
+            ("hist INDEX sid13", "/charts/historical", {
+                "securityId": NIFTY_SID, "exchangeSegment": "IDX_I", "instrument": "INDEX",
+                "expiryCode": 0, "oi": False, "fromDate": str(date.today() - timedelta(days=30)),
+                "toDate": day2}),
+            ("intraday FUT contract-id 1min", "/charts/intraday", {
+                "securityId": fut_sid, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
+                "expiryCode": 0, "oi": False, "fromDate": day, "toDate": day2, "interval": 1}),
+            ("intraday INDEX 1min", "/charts/intraday", {
+                "securityId": NIFTY_SID, "exchangeSegment": "IDX_I", "instrument": "INDEX",
+                "expiryCode": 0, "oi": False, "fromDate": day, "toDate": day2, "interval": 1}),
         ]
-        for name, body in variants:
+        for name, path, body in variants:
             try:
-                r = client._post("/charts/intraday" if "interval" in body else "/charts/historical", body)
+                r = client._post(path, body)
                 n = len((r.get("data") or {}).get("timestamp") or [])
                 print(f"[probe] {name}: OK, {n} bars")
             except requests.HTTPError as e:

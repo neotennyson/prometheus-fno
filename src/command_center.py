@@ -1,12 +1,12 @@
-"""CRUCIBLE Command Center — umbrella dashboard over the whole organism.
+"""PROMETHEUS Command Center — umbrella dashboard over the whole organism.
 
-    CORE     execution engines  (proven money-makers, real-money path)
-    FORGE    research lab       (evolution engine, ledger, paper queue)
-    ARGUS    24/7 monitors      (headline severity + Global Pulse, port 8791)
-             (internal package names: fo-bot src/, atlas/, news_service.py)
+    EMBER   execution engines  (proven money-makers, real-money path)
+    ANVIL   research lab       (evolution engine, ledger, paper queue)
+    ARGUS   24/7 monitors      (headline severity + Global Pulse, port 8791)
+            (internal packages: src/orchestrator.py, src/atlas/, src/news_service.py)
 
 Launch:  .venv/bin/streamlit run src/command_center.py
-Data:    reads only files this repo produces + localhost:8791 when ARGUS runs.
+Data:    repo-produced files only + localhost:8791 when ARGUS runs.
 """
 from __future__ import annotations
 
@@ -44,6 +44,7 @@ CSS = f"""
     @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
     .dot {{ width:9px;height:9px;border-radius:50%;background:{GOOD}; animation:pulse 1.6s infinite }}
     .dot.off {{ background:#667085; animation:none }}
+    .dot.warn {{ background:{WARN}; animation:none }}
     .card {{ background:linear-gradient(180deg,{CARD} 0%,#0A0E16 100%);
             border:1px solid {BORDER}; border-radius:16px; padding:18px 20px }}
     .kpi-label {{ color:#7D8A99; font-size:.72rem; letter-spacing:.14em; font-weight:700 }}
@@ -70,7 +71,10 @@ def inject():
 
 
 def money(x):
-    return f"₹{float(x):,.0f}"
+    try:
+        return f"₹{float(x):,.0f}"
+    except (TypeError, ValueError):
+        return "—"
 
 
 def kpi(col, label, value, sub="", cls=""):
@@ -80,6 +84,7 @@ def kpi(col, label, value, sub="", cls=""):
                  unsafe_allow_html=True)
 
 
+# ------------------------------------------------------------------ loaders
 @st.cache_data(ttl=600)
 def load_json(rel: str):
     p = ROOT / rel
@@ -100,23 +105,48 @@ def load_pnl() -> pd.DataFrame:
     return pd.read_csv(p, parse_dates=["date"]).set_index("date").sort_index()
 
 
-@st.cache_data(ttl=60)
-def load_fills() -> pd.DataFrame:
+@st.cache_data(ttl=30)
+def load_fills(days: int = 7) -> pd.DataFrame:
     db = ROOT / "logs" / "trinity_trades.db"
     if not db.exists():
         return pd.DataFrame()
     try:
         con = sqlite3.connect(db)
-        df = pd.read_sql("SELECT * FROM fills ORDER BY ts DESC LIMIT 300", con)
+        df = pd.read_sql("SELECT * FROM fills ORDER BY ts DESC LIMIT 500", con)
         con.close()
         return df
     except Exception:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=30)
+def load_session_state() -> dict:
+    p = ROOT / "logs" / "trinity_session_state.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
 @st.cache_data(ttl=60)
+def load_news_events(hours: int = 24) -> pd.DataFrame:
+    db = ROOT / "logs" / "news.db"
+    if not db.exists():
+        return pd.DataFrame()
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        df = pd.read_sql("SELECT ts, source, title, impact, keyword, seen_at "
+                         "FROM events ORDER BY seen_at DESC LIMIT 2000", con)
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=45)
 def fetch_argus(endpoint: str):
-    """Live query to the ARGUS monitor; None when it isn't running."""
     import httpx
     try:
         r = httpx.get(f"http://127.0.0.1:8791/{endpoint}", timeout=1.5)
@@ -139,7 +169,8 @@ VERDICTS = {
     "vix_shock": ("PAPER QUEUE", "v-paper", "OOS Sharpe ~1.0 stable across 5 exits"),
     "gap": ("PAPER QUEUE", "v-paper", "gap-cont low-vol · small n"),
     "abs_momentum": ("PAPER QUEUE", "v-paper", "126d momentum · small n"),
-    "vrp_harvest": ("PAPER QUEUE", "v-paper", "VIX-RV spread · my idea"),
+    "vrp_harvest": ("PAPER QUEUE", "v-paper", "VIX-RV spread · structural idea"),
+    "range_expansion": ("PAPER QUEUE", "v-paper", "coil-breakout · reliability-gated"),
     "ma_cross": ("FLAGGED NOISE", "v-watch", "golden-cross n=5 — ignore till n>30"),
     "turn_of_month": ("WATCHLIST", "v-watch", "positive, score below bar"),
     "rsi2_dip": ("WATCHLIST", "v-watch", "Connors RSI(2) · regime-dependent"),
@@ -151,9 +182,18 @@ VERDICTS = {
     "breakout": ("GRAVEYARD", "v-dead", ""),
     "us_lag": ("GRAVEYARD", "v-dead", "catch-up trade not real after costs"),
     "coil_break": ("GRAVEYARD", "v-dead", ""),
+    "lowvol_grind": ("GRAVEYARD", "v-dead", "melt-up grind: OOS bull-run flattery"),
+    "donchian": ("GRAVEYARD", "v-dead", "classic turtle — dead on NIFTY daily"),
+    "nr7_bracket": ("GRAVEYARD", "v-dead", "v1 weak · v2 killed cross-instrument"),
+    "global_night_fade": ("GRAVEYARD", "v-dead", "inverted-level artifact unmasked it"),
+    "cond_orb": ("GRAVEYARD", "v-dead", "compression filter did not save it"),
+    "vwap_fade": ("GRAVEYARD", "v-dead", "sweep-1 kill"),
+    "orb_intraday": ("GRAVEYARD", "v-dead", "sweep-1 kill"),
+    "trend_day": ("GRAVEYARD", "v-dead", "sweep-1 kill"),
 }
 
 
+# ------------------------------------------------------------------ figures
 def equity_fig(pnl: pd.Series, capital: float):
     eq = capital + pnl.cumsum()
     fig = go.Figure(go.Scatter(
@@ -185,6 +225,26 @@ def monthly_cal(pnl: pd.Series):
     return fig
 
 
+def engine_cum_bars(pnl_df: pd.DataFrame):
+    cols = [c for c in ("iron_fly", "gap", "overnight") if c in pnl_df.columns]
+    if not cols:
+        return None
+    cum = pnl_df[cols].cumsum().iloc[-1].sort_values(ascending=False)
+    names = {"iron_fly": "Iron Fly · 0DTE VRP", "gap": "Gap Reversion",
+             "overnight": "Overnight Drift"}
+    fig = go.Figure(go.Bar(
+        y=[names.get(k, k) for k in cum.index], x=cum.values, orientation="h",
+        marker=dict(color=[ACCENT, WARN, VIOLET[:7]][:len(cum)]), width=0.5,
+        text=[money(v) for v in cum.values], textposition="outside",
+        textfont=dict(color="#B8C4D0")))
+    fig.update_layout(height=220, margin=dict(l=10, r=90, t=6, b=6),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      xaxis=dict(visible=False),
+                      yaxis=dict(tickfont=dict(size=12, color="#E6EDF3")))
+    return fig
+
+
+# -------------------------------------------------------------------- main
 def main():
     inject()
     report = load_json("results/backtest_report.json")
@@ -192,52 +252,82 @@ def main():
     ledger = load_csv("results/atlas/ledger.csv")
     queue = load_json("results/atlas/paper_queue.json").get("queue", [])
     fills = load_fills()
+    state = load_session_state()
     news = fetch_argus("status")
     pulse = fetch_argus("pulse")
+    events_db = load_news_events(24)
     now = datetime.now(IST)
     mkt, live = market_status()
+    argus_on = news is not None
 
-    # ---------------------------------------------------------------- header
+    # --------------------------------------------------------------- header
     hl, hr = st.columns([3, 2])
     hl.markdown('<div class="prometheus-title">PROMETHEUS</div>'
                 '<div class="sub">FORETHOUGHT · FIRE · FORTUNE</div>',
                 unsafe_allow_html=True)
-    drishti_on = news is not None
     hr.markdown(
         f'<div style="text-align:right;margin-top:12px">'
         f'<span class="pill"><span class="dot {"off" if not live else ""}"></span>{mkt}</span>'
-        f'<span class="pill"><span class="dot {"off" if not drishti_on else ""}"></span>ARGUS '
-        f'{"ONLINE" if drishti_on else "OFFLINE"}</span>'
+        f'<span class="pill"><span class="dot {"off" if not argus_on else ""}"></span>ARGUS '
+        f'{"ONLINE" if argus_on else "OFFLINE"}</span>'
         f'<span class="pill">{now.strftime("%d %b · %H:%M IST")}</span></div>',
         unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ------------------------------------------------------------- unit cards
-    u1, u2, u3 = st.columns(3)
-    for col, name, tagline, color in (
-            (u1, "EMBER", "the stolen fire · execution engines that pay", ACCENT),
-            (u2, "ANVIL", "where strategies are hammered until proven · 970+ specs", VIOLET),
-            (u3, "ARGUS", "the hundred-eyed watchman · headlines + global pulse", GOOD)):
-        col.markdown(f'<div class="unit" style="border-left-color:{color}">'
-                     f'<b style="letter-spacing:.2em">{name}</b>'
-                     f'<div style="color:#98A2B3;font-size:.82rem">{tagline}</div></div>',
-                     unsafe_allow_html=True)
+    # --------------------------------------------------- unit connection row
+    ledger_mtime = (ROOT / "results/atlas/ledger.csv")
+    anvil_last = datetime.fromtimestamp(ledger_mtime.stat().st_mtime).strftime("%d %b %H:%M") \
+        if ledger_mtime.exists() else "—"
+    fills_today = 0
+    if len(fills):
+        try:
+            fdates = pd.to_datetime(fills["ts"]).dt.date
+            fills_today = int((fdates == now.date()).sum())
+        except Exception:
+            fills_today = 0
+    ember_on = bool(state) and state.get("date") == now.date().isoformat()
+    anvil_on = len(ledger) > 0
 
-    # ------------------------------------------------------------ top KPI row
-    comb = report.get("combined", {}).get("full", {})
+    u1, u2, u3 = st.columns(3)
+    for col, (name, color, online, detail) in zip(
+            (u1, u2, u3), (
+                ("EMBER", ACCENT, ember_on,
+                 f"{'session live' if ember_on else 'no session today'} · "
+                 f"{fills_today} fills today · mode paper"),
+                ("ANVIL", VIOLET, anvil_on,
+                 f"{len(ledger):,} specs · queue {len(queue)} · updated {anvil_last}"),
+                ("ARGUS", GOOD, argus_on,
+                 f"{'watching' if argus_on else 'OFFLINE — start news_service'} · "
+                 f"{news.get('feeds_monitored','—')} feeds" if news else "port 8791 closed"))):
+        dot = "" if online else "off"
+        col.markdown(f'<div class="unit" style="border-left-color:{color}">'
+                     f'<b style="letter-spacing:.2em">{name}</b> '
+                     f'<span class="pill" style="margin-left:6px">'
+                     f'<span class="dot {dot}"></span>{"ONLINE" if online else "IDLE"}</span>'
+                     f'<div style="color:#98A2B3;font-size:.8rem;margin-top:4px">{detail}</div>'
+                     f'</div>', unsafe_allow_html=True)
+
+    # ------------------------------------------------------------- top KPIs
     oos = report.get("combined", {}).get("oos", {})
     iron = report.get("iron_fly", {}).get("oos", {})
+    pulse_comps = (pulse or {}).get("components", {})
+    spx = pulse_comps.get("spx")
     k1, k2, k3, k4, k5 = st.columns(5)
-    kpi(k1, "CORE ENGINE OOS SHARPE", f"{iron.get('sharpe','—')}",
+    kpi(k1, "CORE ENGINE OOS SHARPE", f"{iron.get('sharpe', '—')}",
         "iron fly · Jan 2024 → today", "pos")
-    kpi(k2, "CORE OOS CAGR", f"{oos.get('cagr_pct','—')}%",
+    kpi(k2, "CORE OOS CAGR", f"{oos.get('cagr_pct', '—')}%",
         "combined book · recent regime", "pos")
-    kpi(k3, "SPECS TESTED (LEDGER)", f"{len(ledger):,}", "every idea ever tried, deduped", "neu")
-    kpi(k4, "PAPER QUEUE", str(len(queue)), "conviction ≥ 0.60 awaiting forward test", "neu")
+    kpi(k3, "SPECS TESTED", f"{len(ledger):,}", "every idea ever tried", "neu")
+    kpi(k4, "PAPER QUEUE", str(len(queue)), "conviction ≥ 0.60", "neu")
     kpi(k5, "PULSE LEVEL",
         f"{pulse['score']} · {pulse['level'].upper()}" if pulse else "—",
-        pulse["components"].get("spx") and f"SPX {pulse['components']['spx']:+.2f}% overnight"
-        or "start ARGUS for live feed", "neg" if pulse and pulse["score"] >= 50 else "neu")
+        (f"SPX {spx:+.2f}% overnight" if spx is not None
+         else ("live" if pulse else "start ARGUS")),
+        "neg" if pulse and pulse.get("score", 0) >= 50 else "neu")
+
+    if st.button("🔄 Refresh all data"):
+        st.cache_data.clear()
+        st.rerun()
 
     tabs = st.tabs(["OVERVIEW", "EMBER ENGINES", "ANVIL LAB", "PAPER QUEUE",
                     "ARGUS LIVE", "GRAVEYARD", "OPS RUNBOOK"])
@@ -246,7 +336,7 @@ def main():
     with tabs[0]:
         st.markdown('<h2 class="sect">HOW ₹5L WOULD HAVE GROWN (SIMULATION)</h2>',
                     unsafe_allow_html=True)
-        if not pnl_df.empty:
+        if not pnl_df.empty and "combined" in pnl_df.columns:
             st.plotly_chart(equity_fig(pnl_df["combined"], 500_000),
                             use_container_width=True)
             st.plotly_chart(monthly_cal(pnl_df["combined"]), use_container_width=True)
@@ -256,45 +346,126 @@ def main():
 
     # ---------------------------------------------------------- EMBER ENGINES
     with tabs[1]:
-        st.markdown('<h2 class="sect">ENGINE SCOREBOARD</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="sect">ENGINE SCOREBOARD · OUT-OF-SAMPLE</h2>',
+                    unsafe_allow_html=True)
         rows = []
         for eng, label in (("iron_fly", "Iron Fly · Tuesday 0DTE VRP"),
-                           ("gap", "Gap Reversion"), ("overnight", "Overnight Drift")):
-            blk = report.get(eng, {}).get("oos") or report.get(eng, {}).get("is") \
-                or report.get(eng, {}).get("full", {})
+                           ("gap", "Gap Reversion"),
+                           ("overnight", "Overnight Drift")):
+            blk = (report.get(eng, {}).get("oos")
+                   or report.get(eng, {}).get("is")
+                   or report.get(eng, {}).get("full", {}))
             rows.append({"engine": label, "sharpe": blk.get("sharpe"),
                          "cagr_%": blk.get("cagr_pct"), "max_dd_%": blk.get("max_dd_pct"),
-                         "win_%": blk.get("win_rate_pct"), "trades": blk.get("trade_days")})
+                         "win_%": blk.get("win_rate_pct"),
+                         "trade_days": blk.get("trade_days")})
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        c1, c2 = st.columns(2)
-        kpi(c1, "FULL-PERIOD PROFIT", money(comb.get("total_pnl", 0)),
-            f"{comb.get('years','—')} years simulated", "pos")
-        kpi(c2, "PROFIT FACTOR (COMBINED)", f"{comb.get('profit_factor','—')}",
-            f"win rate {comb.get('win_rate_pct','—')}%", "pos")
 
-    # ------------------------------------------------------------- ATLAS LAB
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<h2 class="sect">PER-ENGINE CUMULATIVE P&L</h2>',
+                        unsafe_allow_html=True)
+            bars = engine_cum_bars(pnl_df) if not pnl_df.empty else None
+            if bars:
+                st.plotly_chart(bars, use_container_width=True)
+            else:
+                st.caption("run_backtest output missing")
+        with c2:
+            st.markdown('<h2 class="sect">RISK LIMITS (LIVE CONFIG)</h2>',
+                        unsafe_allow_html=True)
+            risk = load_yaml_risk()
+            st.markdown(f"""<div class="card" style="line-height:2.0;font-size:.88rem">
+              daily kill: <b>{risk.get('daily_loss_kill_pct','—')}%</b> ·
+              weekly kill: <b>{risk.get('weekly_loss_kill_pct','—')}%</b><br>
+              risk/trade: <b>{risk.get('risk_per_trade_pct','—')}%</b> ·
+              max lots/₹10L: <b>{risk.get('max_lots_per_10l','—')}</b><br>
+              VIX gate for theta: <b>≤ {risk.get('vix_max_for_theta','—')}</b></div>""",
+                        unsafe_allow_html=True)
+
+        st.markdown('<h2 class="sect">SESSION STATE (LIVE/PAPER BOOK)</h2>',
+                    unsafe_allow_html=True)
+        if state:
+            s1, s2, s3 = st.columns(3)
+            kpi(s1, "SESSION DATE", str(state.get("date", "—")), "")
+            kpi(s2, "REALIZED TODAY", money(state.get("realized", 0)),
+                "", "pos" if state.get("realized", 0) >= 0 else "neg")
+            flags = state.get("flags", {})
+            kpi(s3, "FLAGS", ", ".join(flags) if flags else "clean", "")
+            positions = state.get("positions", {})
+            if positions:
+                st.dataframe(pd.DataFrame(
+                    [{"strategy": k, **(v if isinstance(v, dict) else {"detail": v})}
+                     for k, v in positions.items()]),
+                    use_container_width=True, hide_index=True)
+            else:
+                st.caption("No open positions in session book.")
+        else:
+            st.caption("No session yet today — start scripts/run_paper.py during market hours.")
+
+        st.markdown('<h2 class="sect">PAPER FILLS (LAST 7 DAYS)</h2>',
+                    unsafe_allow_html=True)
+        if len(fills):
+            show = [c for c in ("ts", "strategy", "symbol", "side", "qty",
+                                "px", "slip", "cash_after") if c in fills.columns]
+            st.dataframe(fills[show], use_container_width=True, height=300)
+        else:
+            st.caption("No fills yet — the engines only enter under their gates.")
+
+    # -------------------------------------------------------------- ANVIL LAB
     with tabs[2]:
         st.markdown('<h2 class="sect">FAMILY LEADERBOARD (BEST SPEC PER FAMILY)</h2>',
                     unsafe_allow_html=True)
         if len(ledger):
             best = ledger.sort_values("score", ascending=False).groupby("family").head(1)
-            best = best.sort_values("score", ascending=False)
+            best = best.sort_values("score", ascending=False).copy()
             show = best[["family", "params", "filter", "exit", "score", "full_sharpe",
                          "oos_sharpe", "oos_cagr_pct", "n_trades", "quarters_hit"]].copy()
-            show["status"] = show["family"].map(lambda f: VERDICTS.get(f, ("—", "", ""))[0])
-            st.dataframe(show, use_container_width=True, hide_index=True, height=430)
+            show["status"] = show["family"].map(
+                lambda f: VERDICTS.get(f, ("TESTED", "", ""))[0])
+            st.dataframe(show, use_container_width=True, hide_index=True, height=420)
+
             sc = px.scatter(ledger.dropna(subset=["oos_sharpe"]),
-                            x="oos_sharpe", y="score", color="family", hover_data=[
-                                "params", "exit"],
-                            height=340)
+                            x="oos_sharpe", y="score", color="family",
+                            hover_data=["params", "exit"], height=340)
             sc.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                             font_color="#8B98A9", legend_title=None,
+                             font_color="#8B98A9",
                              xaxis=dict(gridcolor="#141B26", title="OOS Sharpe"),
                              yaxis=dict(gridcolor="#141B26", title="Conviction"))
             sc.add_vline(x=0, line_color="#334155", line_dash="dot")
             sc.add_hline(y=0.60, line_color=WARN, line_dash="dot",
                          annotation_text="promotion bar 0.60")
             st.plotly_chart(sc, use_container_width=True)
+
+            st.markdown('<h2 class="sect">FAMILY DRILL-DOWN</h2>', unsafe_allow_html=True)
+            fam_order = best["family"].tolist()
+            pick = st.selectbox("family", fam_order,
+                                format_func=lambda f: f"{f} · {VERDICTS.get(f, ('—',))[0]}")
+            drill = ledger[ledger["family"] == pick].sort_values("score", ascending=False)
+            dcols = [c for c in ("params", "filter", "exit", "score", "full_sharpe",
+                                 "is_sharpe", "oos_sharpe", "oos_cagr_pct",
+                                 "oos_max_dd_pct", "oos_pf", "n_trades",
+                                 "quarters_hit", "promoted") if c in drill.columns]
+            st.dataframe(drill[dcols], use_container_width=True, hide_index=True)
+
+            st.markdown('<h2 class="sect">WATCHLIST (0.45 ≤ SCORE < 0.60)</h2>',
+                        unsafe_allow_html=True)
+            wl = best[(best["score"] >= 0.45) & (best["score"] < 0.60)]
+            if len(wl):
+                st.dataframe(wl[["family", "params", "exit", "score", "oos_sharpe",
+                                 "n_trades"]], use_container_width=True, hide_index=True)
+            else:
+                st.caption("Nothing on the bubble right now.")
+
+            with st.expander("EXPERIMENT ARCHIVE · non-promotable research"):
+                vr = load_json("results/research/daily_vrp_report.json")
+                if vr:
+                    st.caption("Daily VRP harvest on non-0DTE contracts — killed by "
+                               "data limitation (strike rotation), not by loss:")
+                    st.dataframe(pd.DataFrame(vr).T, use_container_width=True)
+                tod = load_csv("results/atlas/tod_scan.csv")
+                if len(tod):
+                    st.caption(f"Time-of-day scan: {len(tod)} windows, "
+                               f"0 reached |t|≥3 — calendar alpha absent.")
         else:
             st.info("Ledger empty — run scripts/evolve.py")
 
@@ -304,66 +475,87 @@ def main():
                     unsafe_allow_html=True)
         if queue:
             qdf = pd.DataFrame(queue)
-            cols = [c for c in ("strategy", "params", "score", "oos_sharpe",
-                                "oos_cagr_pct", "quarters_hit") if c in qdf.columns]
+            cols = [c for c in ("family", "strategy", "params", "filter", "exit", "score",
+                                "oos_sharpe", "oos_cagr_pct", "n_trades",
+                                "quarters_hit") if c in qdf.columns]
             st.dataframe(qdf[cols], use_container_width=True, hide_index=True)
-            st.warning("These are candidates, NOT approved strategies. Paper-trade first; "
-                       "tracking error <30% vs model required before any live rupee.")
+            st.warning("Candidates, NOT approved strategies. Paper first; tracking "
+                       "error <30% vs model required before any live rupee.")
         else:
             st.info("Queue empty.")
 
-    # ------------------------------------------------------------ ARGUS LIVE
+    # -------------------------------------------------------------- ARGUS LIVE
     with tabs[4]:
-        st.markdown('<h2 class="sect">GLOBAL PULSE · OVERNIGHT MACRO PARAMETERS</h2>',
+        st.markdown('<h2 class="sect">GLOBAL PULSE · OVERNIGHT MACRO</h2>',
                     unsafe_allow_html=True)
         if pulse:
-            lvl_cls = "v-live" if pulse["level"] == "calm" else (
-                "v-watch" if pulse["level"] == "elevated" else "v-dead")
             comps = pulse.get("components", {})
-            cc = st.columns(len(comps)) if comps else []
+            cc = st.columns(max(len(comps), 1))
             for col, (k, v) in zip(cc, comps.items()):
                 kpi(col, k.upper(), f"{v:+.2f}%", "",
                     "neg" if v <= -1 else ("neu" if abs(v) >= 0.5 else "pos"))
-            st.markdown(f'<div><span class="pill"><span class="verdict {lvl_cls}">'
-                        f'{pulse["level"].upper()} · {pulse["score"]}/100</span>'
-                        f' <span class="pill">updated {pulse.get("updated","—")[:19]}</span></div>',
+            lvl_cls = {"calm": "v-live", "elevated": "v-watch"}.get(
+                pulse.get("level"), "v-dead")
+            st.markdown(f'<span class="pill"><span class="verdict {lvl_cls}">'
+                        f'{pulse.get("level","?").upper()} · {pulse.get("score","?")}/100'
+                        f'</span> <span class="pill">updated '
+                        f'{str(pulse.get("updated"))[:19]}</span></div>',
                         unsafe_allow_html=True)
         else:
-            st.error("ARGUS offline — start it: `.venv/bin/python -m src.news_service` "
-                     "(port 8791)")
+            st.error("ARGUS offline — start it: `.venv/bin/python -m src.news_service`")
+
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<h2 class="sect">HEADLINE SEVERITY · LAST HOUR</h2>',
+        st.markdown('<h2 class="sect">HEADLINE SEVERITY · DECISION STATE</h2>',
                     unsafe_allow_html=True)
         if news:
-            a1, a2, a3 = st.columns(3)
-            kpi(a1, "IMPACT LEVEL", str(news.get("impact_level", 0)), "", 
+            a1, a2, a3, a4 = st.columns(4)
+            kpi(a1, "IMPACT LEVEL", str(news.get("impact_level", 0)), "",
                 "neg" if news.get("impact_level", 0) >= 3 else "neu")
             kpi(a2, "BLOCK ENTRIES", str(news.get("block_entries")), "")
             kpi(a3, "FORCE FLAT", str(news.get("force_flat")),
-                str(news.get("reason") or ""), 
+                str(news.get("reason") or ""),
                 "neg" if news.get("force_flat") else "pos")
+            kpi(a4, "FEEDS MONITORED", str(news.get("feeds_monitored", "—")),
+                f"{news.get('headlines_seen', 0)} headlines in memory")
             alerts = news.get("recent_alerts") or []
             if alerts:
                 st.dataframe(pd.DataFrame(alerts)[["seen_at", "source", "impact", "title"]],
-                             use_container_width=True, hide_index=True)
-        elif drishti_on:
-            st.caption("Status unreachable although port answers — check service logs.")
+                             use_container_width=True)
+        elif argus_on:
+            st.caption("Port answers but status failed — check logs/argus.log")
+
+        st.markdown('<h2 class="sect">EVENT JOURNAL (NEWS.DB, LAST 24H)</h2>',
+                    unsafe_allow_html=True)
+        if len(events_db):
+            srcs = events_db["source"].str.split(":").str[0]
+            pick_src = st.multiselect("filter sources", sorted(srcs.unique()))
+            view = events_db[srcs.isin(pick_src)] if pick_src else events_db
+            dist = srcs.value_counts().reset_index()
+            dist.columns = ["source", "items"]
+            fig = px.bar(dist.head(12), x="items", y="source", orientation="h",
+                         height=240)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              showlegend=False, font_color="#8B98A9",
+                              xaxis=dict(visible=False),
+                              yaxis=dict(tickfont=dict(color="#8B98A9", size=10)))
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(view.head(200), use_container_width=True, height=300)
+        else:
+            st.caption("No journal yet — starts when ARGUS first runs.")
 
     # -------------------------------------------------------------- GRAVEYARD
     with tabs[5]:
-        st.markdown('<h2 class="sect">EVERY IDEA EVER TESTED · LEDGER OF TRUTH</h2>',
-                    unsafe_allow_html=True)
-        dead = [(f, VERDICTS[f][0], VERDICTS[f][2]) for f in VERDICTS
-                if VERDICTS[f][0] in ("GRAVEYARD",)]
+        st.markdown('<h2 class="sect">LEDGER OF TRUTH</h2>', unsafe_allow_html=True)
+        dead = [f for f in VERDICTS if VERDICTS[f][0] == "GRAVEYARD"]
         st.markdown("**Executed kills:** " + " · ".join(
-            f'<span class="pill"><span class="verdict v-dead">{f}</span></span>' for f, _, _ in dead),
-            unsafe_allow_html=True)
-        st.caption("Plus pre-repo kills: hourly trend, mid-gap fade, always-on carry. "
-                   "Every kill was an experiment that saved real money.")
+            f'<span class="pill"><span class="verdict v-dead">{f}</span></span>'
+            for f in dead), unsafe_allow_html=True)
+        st.caption("Plus pre-repo kills: hourly trend, mid-gap fade, always-on carry.")
         if len(ledger):
             worst = ledger.nsmallest(8, "score")[
                 ["family", "params", "exit", "score", "oos_sharpe", "n_trades"]]
-            st.markdown('<h2 class="sect">BOTTOM OF THE BARREL</h2>', unsafe_allow_html=True)
+            st.markdown('<h2 class="sect">BOTTOM OF THE BARREL</h2>',
+                        unsafe_allow_html=True)
             st.dataframe(worst, use_container_width=True, hide_index=True)
 
     # -------------------------------------------------------------- OPS RUNBOOK
@@ -383,20 +575,32 @@ def main():
 &nbsp;<code>.venv/bin/streamlit run src/command_center.py</code>
 </div>""", unsafe_allow_html=True)
         ladder = [
-            ("BACKTEST", "done", "full cost stack · IS/OOS split · plateau check"),
+            ("BACKTEST", "done", "full cost stack · IS/OOS split · plateau + reliability gates"),
             ("CONVICTION ≥ 0.60", "done" if queue else "next", f"{len(queue)} specs queued"),
             ("PAPER 4–6 WEEKS", "now", "tracking error < 30% gate — no shortcuts"),
             ("LIVE 1 LOT", "next", "SEBI algo-ID · kill switches armed"),
             ("SCALE", "next", "+size only on proven tracking"),
         ]
-        for title, state, desc in ladder:
-            icon = {"done": "✓", "now": "▶", "next": "○"}[state]
-            color = {"done": GOOD, "now": ACCENT, "next": "#667085"}[state]
-            st.markdown(f'<div class="step" style="display:flex;gap:12px;padding:10px 16px;'
+        for title, state_, desc in ladder:
+            icon = {"done": "✓", "now": "▶", "next": "○"}[state_]
+            color = {"done": GOOD, "now": ACCENT, "next": "#667085"}[state_]
+            st.markdown(f'<div style="display:flex;gap:12px;padding:10px 16px;'
                         f'border:1px solid {BORDER};border-radius:12px;background:{CARD};'
                         f'margin-bottom:8px"><b style="color:{color}">{icon}</b>'
                         f'<div><b>{title}</b> <span style="color:#98A2B3;font-size:.85rem">'
                         f'{desc}</span></div></div>', unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=600)
+def load_yaml_risk() -> dict:
+    import yaml
+    p = ROOT / "config" / "settings.yaml"
+    if not p.exists():
+        return {}
+    try:
+        return (yaml.safe_load(p.read_text()) or {}).get("risk", {})
+    except Exception:
+        return {}
 
 
 if __name__ == "__main__":

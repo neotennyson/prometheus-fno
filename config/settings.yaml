@@ -1,0 +1,183 @@
+bot_name: TRINITY
+mode: paper
+capital: 500000
+currency: INR
+timezone: Asia/Kolkata
+
+session:
+  open: "09:15"
+  close: "15:30"
+  square_off: "15:18"
+
+universe:
+  primary: NIFTY
+  lot_size: 65
+  strike_step: 50
+  exchange: NSE_FNO
+  underlying_security_id: "13"
+
+data:
+  provider: dhan
+  yf_symbols:
+    nifty: ^NSEI
+    sensex: ^BSESN
+    banknifty: ^NSEBANK
+    indiavix: ^INDIAVIX
+
+costs:
+  broker: dhan
+  brokerage_per_order: 20.0
+  opt_stt_sell: 0.0015
+  opt_stt_exercise: 0.0015
+  fut_stt_sell: 0.0005
+  exch_opt_nse: 0.0003503
+  exch_fut_nse: 0.0000173
+  sebi_turnover: 0.000001
+  stamp_opt_buy: 0.00003
+  stamp_fut_buy: 0.00002
+  gst_on_charges: 0.18
+  ipft_opt: 0.00002
+  slippage_opt_pct: 0.002
+  slippage_fut_pts: 1.5
+  min_slippage_per_leg: 0.75
+
+risk:
+  risk_per_trade_pct: 1.0
+  max_lots_per_10l: 3
+  daily_loss_kill_pct: 2.0
+  weekly_loss_kill_pct: 4.0
+  max_concurrent_strategies_open: 2
+  vix_max_for_theta: 22.0
+  event_skip_dates: []
+
+strategies:
+  iron_fly_expiry:
+    enabled: true
+    entry_time: "10:05"
+    wing_width: 175
+    stop_mult: 2.0
+    target_keep_pct: 0.40
+    min_credit_pts: 55
+    iv_to_vix_mult: 1.08
+    exit_time: "15:18"
+    buffer_pts: 30
+
+  gap_reversion:
+    enabled: true
+    atr_period: 14
+    fade_gap_atr: 0.75
+    extreme_gap_atr: 1.2
+    stop_atr_mult: 1.0
+    risk_pct: 0.5
+
+  overnight_drift:
+    enabled: true
+    min_equity: 2000000
+    adverse_open_exit_pct: 1.5
+    vix_min_gate: 17.0
+    entry_time: "15:22"
+    exit_time: "09:20"
+
+  trend_hourly:
+    enabled: false
+    ema_fast: 9
+    ema_slow: 21
+    adx_period: 14
+    adx_min: 18.0
+    risk_pct: 0.5
+
+  # Daily-frequency intraday engines (1-min spot panel). Disabled by default:
+  # flip enabled:true only after a sweep combo clears conviction >= 0.60.
+  orb_intraday:
+    enabled: false
+    orb_minutes: 15
+    stop_atr_mult: 0.75
+    tp_r: 2.0
+    entry_cutoff: "12:00"
+    exit_time: "15:15"
+    atr_period: 14
+
+  vwap_fade:
+    enabled: false
+    z_in: 2.0
+    z_out: 0.3
+    stop_z: 3.5
+    window_start: "11:00"
+    window_end: "14:30"
+    exit_time: "15:15"
+
+  trend_day:
+    enabled: false
+    drive_atr: 0.6
+    trail_atr: 1.2
+    probe_time: "10:30"
+    entry_time: "10:45"
+    exit_time: "15:15"
+
+execution:
+  broker: paper
+  poll_interval_sec: 20
+  dhan:
+    access_token_env: DHAN_ACCESS_TOKEN
+    client_id_env: DHAN_CLIENT_ID
+    base_url: https://api.dhan.co/v2
+    algo_id: ""
+    static_ip_registered: false
+
+storage:
+  raw_dir: data/raw
+  curated_dir: data/curated
+  trades_db: logs/trinity_trades.db
+  results_dir: results
+
+events:
+  enabled: true
+  calendar_file: config/events.yaml
+  headline_action: pause
+  poll_secs: 180
+  alert_lookback_min: 45
+  news_service_url: "http://127.0.0.1:8791"
+  service_host: "127.0.0.1"
+  service_port: 8791
+  poll_window_start: "09:00"
+  poll_window_end: "15:35"
+  feeds:
+    # India market desks
+    - https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms
+    - https://www.moneycontrol.com/rss/latestnews.xml
+    - https://www.moneycontrol.com/rss/economy.xml
+    - https://www.business-standard.com/rss/markets-106.rss
+    - https://www.livemint.com/rss/markets
+    # global wires & central banks
+    - http://feeds.bbci.co.uk/news/business/rss.xml
+    - https://www.federalreserve.gov/feeds/press_all.xml
+    # targeted Google News query mirrors (syndicates Reuters/Bloomberg/PTI)
+    - https://news.google.com/rss/search?q=RBI+repo+rate+monetary+policy&hl=en-IN&gl=IN&ceid=IN:en
+    - https://news.google.com/rss/search?q=SEBI+regulation+bans&hl=en-IN&gl=IN&ceid=IN:en
+    - https://news.google.com/rss/search?q=Nifty+Sensex+crash+OR+surge+OR+circuit&hl=en-IN&gl=IN&ceid=IN:en
+    - https://news.google.com/rss/search?q=India+election+result+OR+union+budget&hl=en-IN&gl=IN&ceid=IN:en
+    # trader chatter (free, twitter-like; polled with browser UA)
+    - https://www.reddit.com/r/IndianStockMarket/new/.rss
+    - https://www.reddit.com/r/IndiaInvestments/new/.rss
+  social_symbols:
+    - NIFTY
+    - BANKNIFTY
+    - SENSEX
+  keywords:
+    - rbi
+    - repo rate
+    - monetary policy
+    - sebi bans
+    - union budget
+    - election result
+    - exit poll
+    - missile
+    - air strike
+    - military action
+    - declares war
+    - emergency imposed
+    - imposes tariff
+    - sanctions on india
+    - credit rating cut
+    - circuit breaker
+    - trading halt

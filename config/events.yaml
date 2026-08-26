@@ -1,0 +1,24 @@
+# TRINITY event calendar — days the bot should stand down or flatten.
+# action: no_entry = no new trades that day (existing positions managed normally)
+#         flat      = force exit all positions at next loop and stop for the day
+#
+# Fill RBI MPC decision dates from https://www.rbi.org.in (announced quarterly)
+# and FOMC dates from https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+# The RSS headline monitor is the safety net for anything not listed here.
+
+events:
+  - name: union_budget
+    every_year: "02-01"
+    action: no_entry
+
+  # - name: rbi_mpc_decision
+  #   date: "2026-04-03"
+  #   action: no_entry
+
+  # - name: fomc_night
+  #   date: "2026-03-18"
+  #   action: flat
+
+  # - name: general_election_result
+  #   date: "2029-06-04"
+  #   action: flat

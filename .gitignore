@@ -1,0 +1,17 @@
+# --- runtime ---
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# --- data: large + broker-licensed; regenerate via scripts/ ---
+data/
+!data/.gitkeep
+
+# --- local state & secrets surface ---
+logs/*.db
+logs/*.log
+logs/session_state.json
+logs/news.db
+.env

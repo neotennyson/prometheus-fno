@@ -1,0 +1,29 @@
+{
+  "real_price_backtest": {
+    "stats": {
+      "days": 1777,
+      "trade_days": 93,
+      "years": 4.86,
+      "total_pnl": -44939.0,
+      "cagr_pct": -1.92,
+      "sharpe": -0.55,
+      "sortino": -0.27,
+      "max_dd_pct": -10.6,
+      "profit_factor": 0.71,
+      "win_rate_pct": 49.46,
+      "best_day": 4097.0,
+      "worst_day": -5459.0
+    },
+    "note": "real premiums; fixed strikes; value-based stop; VIX filter; BS-with-real-IV only for strikes the rolling anchor is not currently printing",
+    "wing": 150,
+    "wing_skew_bump_vols": {
+      "ce": 2.38,
+      "pe": 3.73
+    },
+    "exits": {
+      "time": 60,
+      "target": 32,
+      "stop": 1
+    }
+  }
+}

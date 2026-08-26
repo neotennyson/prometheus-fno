@@ -1,0 +1,22 @@
+# PROMETHEUS ops automation examples
+# Install with: crontab -e  (Linux/VPS) — macOS users: same lines work in `crontab -e`
+#
+# Assumptions: repo cloned to /opt/prometheus, venv at /opt/prometheus/.venv
+# All times IST-relative on a VPS set to Asia/Kolkata (timedatectl set-timezone Asia/Kolkata)
+
+# ---- ARGUS watchman: always up, restart if it dies -------------------------
+* * * * * cd /opt/prometheus && .venv/bin/python -m src.news_service >> logs/argus.log 2>&1 &
+# (for production prefer a systemd unit; see docs in README roadmap step 4)
+
+# ---- EMBER session loop: trading days only ---------------------------------
+15 9 * * 1-5  cd /opt/prometheus && .venv/bin/python scripts/run_paper.py --mode paper >> logs/session_$(date +\%F).log 2>&1
+
+# ---- data refresh after close ----------------------------------------------
+5 16 * * 1-5  cd /opt/prometheus && .venv/bin/python scripts/download_history.py >> logs/data.log 2>&1
+20 16 * * 2   cd /opt/prometheus && .venv/bin/python scripts/dhan_backfill.py >> logs/dhan.log 2>&1
+
+# ---- ANVIL evolution generation: weekly, Sunday morning --------------------
+0 10 * * 0    cd /opt/prometheus && .venv/bin/python scripts/evolve.py >> logs/evolve.log 2>&1
+
+# ---- monthly core re-validation --------------------------------------------
+0 11 1 * *    cd /opt/prometheus && .venv/bin/python scripts/run_backtest.py >> logs/backtest.log 2>&1

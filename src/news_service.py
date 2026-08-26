@@ -72,6 +72,9 @@ DEFAULT_FEEDS = [
 # Social streams polled as JSON (StockTwits = twitter for tickers, free tier)
 SOCIAL_SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
 
+# Sources that are informational only -- never arm block/flat decisions.
+IGNORE_ALERT_SOURCES = ("news.google.com", "reddit.com", "stocktwits")
+
 
 def _parse_stocktwits_payload(payload: dict) -> list[dict]:
     out = []
@@ -191,8 +194,12 @@ class NewsStore:
 
     def alerts_since(self, minutes: int) -> list[dict]:
         cutoff = datetime.now() - timedelta(minutes=minutes)
-        return [r for r in self.recent if r["impact"] >= 2 and
-                datetime.fromisoformat(r["seen_at"]) >= cutoff]
+        # mirrors/chatter inform the journal but must not arm the block --
+        # every query-mirror title contains trigger words by construction.
+        return [r for r in self.recent
+                if r["impact"] >= 2
+                and not any(s in r["source"].lower() for s in IGNORE_ALERT_SOURCES)
+                and datetime.fromisoformat(r["seen_at"]) >= cutoff]
 
 
 class Poller(threading.Thread):

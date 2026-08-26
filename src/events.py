@@ -32,6 +32,10 @@ class EventRisk:
         self.keywords = [k.lower() for k in self.cfg.get("keywords", [])]
         self._patterns = [re.compile(rf"\b{re.escape(k)}\b") for k in self.keywords]
         self.feeds = self.cfg.get("feeds", DEFAULT_FEEDS)
+        # Query-mirror & chatter sources (news.google.com etc.) inherently contain
+        # trigger words in every title -- they must never arm the keyword block.
+        self.ignore_sources = {str(s).lower()
+                               for s in self.cfg.get("ignored_sources", [])}
         self.poll_secs = int(self.cfg.get("poll_secs", 180))
         self.lookback_min = int(self.cfg.get("alert_lookback_min", 45))
         self.headline_action = str(self.cfg.get("headline_action", "pause")).lower()
@@ -102,9 +106,12 @@ class EventRisk:
                 return
             self._last_poll = now
             for url in self.feeds:
+                src = url.split("/")[2] if url.count("/") >= 2 else url
+                if src.lower() in self.ignore_sources:
+                    continue
                 for item in self._fetcher(url):
                     self._headlines.append({"ts": now,
-                                            "source": url.split("/")[2] if url.count("/") >= 2 else url,
+                                            "source": src,
                                             "title": item["title"], "summary": item["summary"]})
             cutoff = now.timestamp() - max(self.lookback_min * 3, 240) * 60
             self._headlines = [h for h in self._headlines if h["ts"].timestamp() >= cutoff]

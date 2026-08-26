@@ -98,3 +98,31 @@ def test_orchestrator_event_blocks_entries(tmp_path, monkeypatch):
     joined = " ".join(map(str, out["actions"]))
     assert "EVENT_PAUSE" in joined
     assert "IF_ENTRY" not in joined
+
+
+def test_ignored_sources_never_arm_block(tmp_path):
+    """Query-mirror headlines (news.google.com) contain trigger words by
+    construction; they must not pause the bot. Regression for the
+    permanent-EVENT_PAUSE bug."""
+    import yaml
+    from src.events import EventRisk
+    cal = tmp_path / "events.yaml"
+    cal.write_text(yaml.safe_dump({"events": []}))
+    cfg = {"keywords": ["union budget"], "ignored_sources": ["news.google.com"],
+           "feeds": ["https://news.google.com/rss/x"], "headline_action": "pause",
+           "poll_window_start": "00:00", "poll_window_end": "23:59"}
+
+    def fake_fetch(url):
+        return [{"title": "Union Budget 2027: big announcements expected",
+                 "summary": ""}]
+
+    ev = EventRisk(cal, cfg, fetcher=fake_fetch)
+    now = datetime.now()
+    ev.refresh(now)
+    assert ev.headline_alert(now) is None          # ignored source filtered out
+
+    # same headline from a real desk still blocks
+    cfg2 = dict(cfg, feeds=["https://economictimes.indiatimes.com/x"])
+    ev2 = EventRisk(cal, cfg2, fetcher=fake_fetch)
+    ev2.refresh(now)
+    assert ev2.headline_alert(now) is not None

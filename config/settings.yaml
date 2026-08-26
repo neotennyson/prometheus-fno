@@ -163,9 +163,11 @@ events:
     - NIFTY
     - BANKNIFTY
     - SENSEX
+  ignored_sources:
+    - news.google.com
   keywords:
-    - rbi
     - repo rate
+    - rbi policy
     - monetary policy
     - sebi bans
     - union budget

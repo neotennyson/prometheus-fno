@@ -259,7 +259,39 @@ def sig_calm_bounce(aux, p):
            (aux["up_streak"] >= k) & calm
 
 
+def sig_range_expansion(aux, p):
+    """Vol-expansion onset: quietest session in a month, then today expands to
+    k× ATR. Expansion begets expansion -- ride toward the close direction."""
+    idle_n = int(p.get("idle_n", 20))
+    k = float(p.get("k_atr", 1.6))
+    tr = np.abs(aux["c"] - np.roll(aux["c"], 1))
+    idle = aux["atr"] * idle_n * 0 + pd.Series(tr).rolling(idle_n).min().to_numpy()
+    expanded = tr >= k * aux["atr"]
+    was_quiet = tr <= idle * float(p.get("quiet_k", 1.15))
+    up = expanded & was_quiet & (aux["c"] > aux["o"])
+    dn = expanded & was_quiet & (aux["c"] < aux["o"])
+    return up, dn
+
+
+def sig_lowvol_grind(aux, p):
+    """Low-vol grind: VIX < threshold + index above its 50d mean -> the
+    melt-up regime. Slow, high-hit-rate drift capture while it lasts."""
+    vthr = float(p.get("vix_thr", 14.0))
+    above = aux["c"] > pd.Series(aux["c"]).rolling(50).mean().to_numpy()
+    if "vix" in aux:
+        m = above & (aux["vix"] < vthr)
+    else:
+        m = above
+    return m, ~above & (aux.get("vix", above * 0 + 99) > 22)
+
+
 SIGNALS = {
+    "range_expansion": (sig_range_expansion,
+                        [{"idle_n": 20, "k_atr": 1.5}, {"idle_n": 20, "k_atr": 2.0}]),
+    "lowvol_grind": (sig_lowvol_grind, [{"vix_thr": 14.0}, {"vix_thr": 16.0}]),
+}
+
+SIGNALS.update({
     "breakout": (sig_breakout, [{"n": n} for n in (10, 20, 40, 60)]),
     "coil_break": (sig_coil_break, [{"buf": b} for b in (0.05, 0.15)]),
     "gap": (sig_gap, [{"mode": m, "thr": t} for m in ("cont", "fade")
@@ -284,7 +316,7 @@ SIGNALS = {
     "vrp_harvest": (sig_vrp_harvest, [{"q": 0.80}, {"q": 0.65, "mirror": True}]),
     "calm_bounce": (sig_calm_bounce, [{"k": 3, "vix_rank_cap": 0.70},
                                       {"k": 4, "vix_rank_cap": 0.60}]),
-}
+})
 
 
 # ------------------------------------------------------------------ filters

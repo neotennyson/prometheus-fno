@@ -90,9 +90,31 @@ proven otherwise (this has already caught one fatal bug).
 
 | Engine | Thesis | OOS result (Jan 2024→) |
 |--------|--------|------------------------|
-| Iron Fly · Tuesday 0DTE | harvest volatility risk premium, defined risk | Sharpe 3.65 · 79% win rate · profits survive 3× slippage stress |
-| Gap reversion | fade ≥0.75-ATR opens | rare, small positive expectancy |
+| Iron Fly · Tuesday 0DTE | harvest volatility risk premium, defined risk | ⚠️ **REAL-PRICE VERDICT BELOW** — sim Sharpe 3.65 did not survive real quotes |
+| Gap reversion | fade ≥0.75-ATR opens | rare, small positive expectancy (sim basis — not yet re-tested on futures data) |
 | Overnight drift | VIX≥17 regime gate | weak OOS — watchlist |
+
+### Real-price validation (Aug 2026) — the reckoning
+
+5 years of expired-option **minute data from Dhan** (ATM ±4 strikes, ~2.7M rows)
+was replayed through a hybrid pricer (real premiums where ticks exist, calibrated
+Black-Scholes only for missing wing marks — median error ≈ 6 pts on ~87-pt credits).
+
+| Test | Result |
+|------|--------|
+| Full-period iron fly (all wings/entries/exits) | **Sharpe −0.55 · ₹−44,939 over 93 trades** — the sim's 3.65 was a vol/path artifact |
+| Walk-forward grid, 216 combos × 6 windows × 3 wings | optimized OOS **Sharpe −1.33**, 1/6 windows profitable; params drift, no plateau |
+| Entry-filter pass (late entry · IV-richness · chop gate) | cuts bleed **−₹70K → −₹13K**, beats baseline 5/6 windows, MaxDD −16%→−3% — **but still net negative** |
+
+Robust findings inside the wreckage: stops hurt (unanimous "no-stop" across
+windows), morning chop is poison (11:35+ entries always win the comparison),
+and IV/chop filters genuinely separate good days from bad. What does NOT exist
+yet: a configuration with positive after-cost expectancy on real prices.
+
+**Consequence:** the promotion ladder above is load-bearing. Nothing goes near
+paper money until it survives *this* engine — `src/backtest/real_engine.py`,
+walk-forwarded via `scripts/walk_forward_real.py` and
+`scripts/walk_forward_filters.py`.
 
 **Anvil research lab:** 972 specs tested across 16 families. Paper queue holds
 19 survivors (vix-shock plateau, gap continuation low-vol, VRP harvest, momentum
@@ -126,8 +148,10 @@ export DHAN_ACCESS_TOKEN="..." DHAN_CLIENT_ID="..."
 ```
 
 Data refreshers: `scripts/download_history.py` (Yahoo dailies),
-`scripts/dhan_backfill.py` (option chains, needs Dhan creds).
-Historical parquets are NOT in this repo — regenerate them.
+`scripts/dhan_backfill.py` (expired option chains),
+`scripts/dhan_futures_backfill.py` (Nifty futures daily+minute, for gap/overnight
+research — needs Dhan creds). Historical parquets are NOT in this repo —
+regenerate them.
 
 ## OPERATIONS RUNBOOK
 
@@ -146,7 +170,7 @@ Historical parquets are NOT in this repo — regenerate them.
 config/settings.yaml      all knobs: capital, costs, risk limits, feeds, engines
 src/orchestrator.py       IST session loop: entries, exits, kill switches, EOD flat
 src/strategies/           engine logic shared by backtest AND live paths
-src/backtest/             engines + metrics + conviction-scored intraday tester
+src/backtest/             engines + metrics + real-price replay engine + conviction-scored intraday tester
 src/atlas/                component library, evolution engine, generic spec runner
 src/research/             conviction score + bulk sweep harness
 src/news_service.py       ARGUS: RSS/social/macro pollers + severity + /pulse API

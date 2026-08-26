@@ -30,7 +30,7 @@ def hist_chunk(client, frm: date, to: date, interval: int) -> pd.DataFrame:
     body = {"securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
             "expiryCode": 0, "oi": False, "fromDate": str(frm), "toDate": str(to),
             "interval": interval}
-    r = client.post("/charts/intraday" if interval > 0 else "/charts/historical", json=body)
+    r = client._post("/charts/historical" if interval == 0 else "/charts/intraday", body)
     rows = r.get("data", {})
     if not rows or not rows.get("timestamp"):
         return pd.DataFrame()
@@ -47,7 +47,7 @@ def main():
     client = get_client()
 
     if args.probe:
-        r = client.post("/charts/historical", json={
+        r = client._post("/charts/historical", {
             "securityId": NIFTY_SID, "exchangeSegment": "NSE_FNO", "instrument": "FUTIDX",
             "expiryCode": 0, "oi": False, "fromDate": str(date.today() - timedelta(days=30)),
             "toDate": str(date.today() - timedelta(days=25)), "interval": 15})

@@ -95,6 +95,32 @@ proven otherwise (this has already caught one fatal bug).
 | Overnight drift | VIX≥17 regime gate | ⚡ survives: walk-forward OOS Sharpe 0.80 (+6.8% over 4.5y, costs incl.); VIX threshold drifts 14–22 by regime |
 | Gap-CONT + Overnight portfolio | diversify two small edges | OOS Sharpe 0.77, corr 0.29 — **no Sharpe boost**, deeper DD (−12%), 2026 negative → parked, not promoted |
 
+### Family research sweep (Aug 2026) — five more families vs real minutes
+
+Walk-forwarded on INDEX minute data (`scripts/research_families.py`), train-only selection,
+stitched OOS:
+
+| Family | Stitched OOS verdict |
+|--------|----------------------|
+| Overnight drift + VIX-direction conditionals | **Sharpe 1.15** · +7.7% — best survivor; picks its own VIX level & rising/falling regime |
+| Turn-of-month (long TD-3 → month-end close) | Sharpe 2.79 · +11.9% — but last two OOS windows negative |
+| Range-expansion continuation (ANVIL `sig_range_expansion`) | ☠️ −4.1 |
+| Low-vol grind (ANVIL `sig_lowvol_grind`) | ☠️ −1.0 |
+| Expiry-morning momentum (follow first 45 min to close) | ☠️ −0.85 |
+
+**Mega-portfolio of all survivors** (gap-CONT + overnight-v6 + TOM): OOS Sharpe 1.45,
++23.2% over 2022–2025 … then **−12.3% in 2026**. Rolling 6-month Sharpe went from
++1.5…+3.7 to −2.1/−2.5 across Jan→Jul 2026.
+
+### The meta-finding (more valuable than any single spec)
+
+Every long-biased daily edge — gap continuation, overnight drift, turn-of-month,
+the sim-world engines — broke **simultaneously in early 2026**. That is not five
+strategies dying of old age; that is one regime ending. Until a validated regime
+filter exists (or 12+ months of new-regime data accumulate), the honest posture is:
+system built, kill-switches proven, ledger truthful, capital on the sidelines.
+The next decode target is *what changed in 2026*, not another parameter grid.
+
 ### Real-price validation (Aug 2026) — the reckoning
 
 5 years of expired-option **minute data from Dhan** (ATM ±4 strikes, ~2.7M rows)

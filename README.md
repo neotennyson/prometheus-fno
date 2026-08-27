@@ -91,8 +91,9 @@ proven otherwise (this has already caught one fatal bug).
 | Engine | Thesis | OOS result (Jan 2024→) |
 |--------|--------|------------------------|
 | Iron Fly · Tuesday 0DTE | harvest volatility risk premium, defined risk | ⚠️ **REAL-PRICE VERDICT BELOW** — sim Sharpe 3.65 did not survive real quotes |
-| Gap reversion | fade ≥0.75-ATR opens | rare, small positive expectancy (sim basis — not yet re-tested on futures data) |
-| Overnight drift | VIX≥17 regime gate | weak OOS — watchlist |
+| Gap reversion | fade ≥0.75-ATR opens | ☠️ **DEAD AND BACKWARDS** on real data: fade = Sharpe −6.5; the *continuation* side survives walk-forward at OOS Sharpe 0.72 |
+| Overnight drift | VIX≥17 regime gate | ⚡ survives: walk-forward OOS Sharpe 0.80 (+6.8% over 4.5y, costs incl.); VIX threshold drifts 14–22 by regime |
+| Gap-CONT + Overnight portfolio | diversify two small edges | OOS Sharpe 0.77, corr 0.29 — **no Sharpe boost**, deeper DD (−12%), 2026 negative → parked, not promoted |
 
 ### Real-price validation (Aug 2026) — the reckoning
 

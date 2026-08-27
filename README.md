@@ -115,11 +115,31 @@ stitched OOS:
 ### The meta-finding (more valuable than any single spec)
 
 Every long-biased daily edge — gap continuation, overnight drift, turn-of-month,
-the sim-world engines — broke **simultaneously in early 2026**. That is not five
-strategies dying of old age; that is one regime ending. Until a validated regime
-filter exists (or 12+ months of new-regime data accumulate), the honest posture is:
-system built, kill-switches proven, ledger truthful, capital on the sidelines.
-The next decode target is *what changed in 2026*, not another parameter grid.
+the sim-world engines — broke **simultaneously** across 2025H2–2026H1. Forensics
+(`scripts/decode_2026.py`) show the mechanism: India's **overnight return premium**
+(prev close → open) decayed from +13–20 bp/day (2021–2024) to ~0 bp/day (2025–26),
+and gap-momentum snapped in late 2025 after three years of paying +20–100 bp/trade.
+Not five strategies dying of old age — one premium ending.
+
+### The remedy that survived honesty checks: the health gate
+
+Rule: each engine may trade only while the **trailing-quarter sum of overnight
+returns is positive** (past-only lookup). Results on stitched walk-forward OOS:
+
+| window | total | Sharpe | MaxDD | note |
+|--------|-------|--------|-------|------|
+| ungated | +23.2% | 1.45 | −17.7% | 2026: −12.3% |
+| gate @21d | +28.6% | 2.78 | −5.6% | best |
+| gate @63d | +24.5% | 2.17 | −11.3% | 2026 loss cut to −1.7% |
+| gate @126d | +21.0% | 1.79 | −11.6% | worst working case |
+| **inverted gate** | **−1.0%** | **−0.11** | | falsification: it's load-bearing |
+
+Every window length beats ungated; inverting the gate destroys everything.
+**Verdict:** the regime-gated mega portfolio (gap-CONT + overnight-v6 + TOM behind
+the health gate) is the system's first candidate to graduate to the paper-trading
+rung of the promotion ladder — with expectations set at modest positive drift,
+multi-month flat stretches during bad regimes, and SEBI algo-ID compliance before
+any live order.
 
 ### Real-price validation (Aug 2026) — the reckoning
 

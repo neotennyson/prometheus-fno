@@ -241,6 +241,22 @@ def monthly_cal(pnl: pd.Series):
 # -------------------------------------------------------------------- main
 def main():
     inject()
+    # ---- access gate: required whenever the dashboard is exposed online ----
+    import os
+    code = os.environ.get("PROMETHEUS_DASH_CODE", "")
+    if code:
+        ok = st.session_state.get("auth") == code
+        if not ok:
+            st.markdown('<div class="title">PROMETHEUS</div>', unsafe_allow_html=True)
+            guess = st.text_input("Access code", type="password")
+            if st.button("Enter"):
+                if guess == code:
+                    st.session_state["auth"] = code
+                    st.rerun()
+                else:
+                    st.error("Wrong code")
+            return
+
     report = load_json("results/backtest_report.json")
     pnl_df = load_pnl()
     ledger = load_csv("results/atlas/ledger.csv")

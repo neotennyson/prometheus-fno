@@ -390,3 +390,32 @@ tests/                    39 tests (engine, fills, costs, risk, events, news,
   into the paper queue; the gate is the gate.
 - All money math in rupees with `round(x,2)` at trade-record boundaries so the
   journal ties out exactly.
+
+---
+
+## 14. Full automation (added Sep 2026)
+
+The system runs itself via macOS launchd agents (`ops/install-automation.sh`):
+
+| Agent | Schedule | Job |
+|---|---|---|
+| `com.prometheus.argus` | always (KeepAlive) | ARGUS watchman, auto-restart |
+| `com.prometheus.tunnel` | always (KeepAlive) | Cloudflare tunnel for remote dashboard |
+| `com.prometheus.session.N` | Mon–Fri 09:05 | EMBER paper session (skips weekends + NSE holidays via `scripts/session.sh`) |
+| `com.prometheus.data.N` | Mon–Fri 15:40 | Yahoo dailies refresh |
+| `com.prometheus.evolve` | Sun 10:00 | ANVIL evolution generation |
+
+- **Secrets:** the single local file `.env` (gitignored) holds `DHAN_ACCESS_TOKEN`,
+  `DHAN_CLIENT_ID`, `DHAN_ALGO_ID`, optional Groww slots, `PROMETHEUS_DASH_CODE`.
+  `src/config.py::load_dotenv` loads it at import (env vars win if already set).
+- **Remote dashboard:** `scripts/tunnel.sh start` runs a Cloudflare quick tunnel
+  to Streamlit :8501; public URL written to `logs/tunnel_url.txt`. The dashboard
+  requires the `PROMETHEUS_DASH_CODE` access code when exposed. Quick-tunnel URLs
+  rotate on restart; a named tunnel (custom domain) is the upgrade path.
+- **Token reality:** Dhan access tokens are generated in the Dhan web console and
+  expire (24h–30d by plan); TOTP does not automate Dhan token issuance — a human
+  refreshes `DHAN_ACCESS_TOKEN` in `.env` when it lapses. Groww's API supports
+  TOTP-based programmatic token generation (slots reserved in `.env`; adapter
+  build pending — see roadmap item 7).
+- **Manual overrides:** everything in `scripts/` still runs standalone; launchd
+  only automates the schedule. Uninstall: `launchctl unload ~/Library/LaunchAgents/com.prometheus.*.plist`.

@@ -80,6 +80,25 @@ for WD in 1 2 3 4 5; do
 EOF
 done
 
+
+# 6. token renewal 08:45 Mon-Fri (Groww tokens expire 06:00 daily; session 09:05)
+for WD in 1 2 3 4 5; do
+  cat > "$PLIST_DIR/com.prometheus.tokens.$WD.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.prometheus.tokens.$WD</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>-lc</string><string>cd '$REPO' && .venv/bin/python scripts/token_renew.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>$REPO</string>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>$WD</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+  <key>StandardOutPath</key><string>$REPO/logs/launchd_tokens.log</string>
+  <key>StandardErrorPath</key><string>$REPO/logs/launchd_tokens.log</string>
+</dict></plist>
+EOF
+done
+
 # 5. weekly evolution generation, Sunday 10:00
 cat > "$PLIST_DIR/com.prometheus.evolve.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>

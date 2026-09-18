@@ -36,11 +36,11 @@ EOF
 
 # 1. ARGUS always-on (restarts if it crashes or the Mac reboots)
 write_plist "com.prometheus.argus" \
-  "cd '$REPO' && bash scripts/argus.sh start; while true; do sleep 3600; done" "" "yes"
+  "cd '$REPO' && while true; do bash scripts/argus.sh start || true; sleep 60; done" "" "yes"
 
 # 2. Tunnel always-on (re-establishes the public URL after reboot)
 write_plist "com.prometheus.tunnel" \
-  "cd '$REPO' && bash scripts/tunnel.sh start; while true; do sleep 3600; done" "" "yes"
+  "cd '$REPO' && while true; do bash scripts/tunnel.sh start || true; sleep 300; done" "" "yes"
 
 # 3. EMBER session: weekdays 09:05 — one launchd plist per weekday
 #    (launchd runs in LOCAL time — set the Mac to IST, or on a UTC VPS use hour=3)

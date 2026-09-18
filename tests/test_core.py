@@ -87,3 +87,16 @@ def test_ist_clock_is_ist_even_on_utc_host():
     from zoneinfo import ZoneInfo
     now = ist_now()
     assert now.utcoffset().total_seconds() == 19800    # +5:30
+
+
+def test_dhan_client_id_auto_extracted_from_jwt():
+    """Paste ONE value: client id is parsed from the token's own JWT payload."""
+    import base64
+    import json
+    from src.data.dhan_client import DhanClient
+    claims = {"dhanClientId": "YOUR_DHAN_CLIENT_ID", "exp": 9999999999}
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().strip("=")
+    tok = f"eyJhbGciOiJots9.eyJ0ZXN0Ijp0cnVlfQ.sig"  # placeholder header/sig
+    tok = f"aaa.{payload}.sig"
+    assert DhanClient._client_id_from_jwt(tok) == "YOUR_DHAN_CLIENT_ID"
+    assert DhanClient._client_id_from_jwt("garbage") is None

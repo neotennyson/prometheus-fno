@@ -67,6 +67,25 @@ def _request(path: str, method: str = "GET") -> dict:
         raise RuntimeError(f"token API HTTP {exc.code} for {path}: {body}") from None
 
 
+def _age_of(entry: dict) -> float:
+    """Seconds since fetched_at. Tolerates float epoch AND ISO-8601 strings
+    (other broker bots on this machine share the cache file). Unparseable or
+    missing -> treated as stale so we refetch."""
+    raw = entry.get("fetched_at", 0)
+    try:
+        return time.time() - float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        from datetime import datetime, timezone
+        ts = datetime.fromisoformat(str(raw))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return time.time() - ts.timestamp()
+    except Exception:
+        return float("inf")
+
+
 def get_token(broker: str, ttl: int | None = None) -> str:
     """Point-of-use token getter for any broker client. Raises RuntimeError
     (never returns an empty string) when no source is configured."""
@@ -83,8 +102,7 @@ def get_token(broker: str, ttl: int | None = None) -> str:
 
     cache = _load_cache()
     entry = cache.get(broker) or {}
-    age = time.time() - float(entry.get("fetched_at", 0))
-    if entry.get("token") and age < (CACHE_TTL_SECONDS if ttl is None else ttl):
+    if entry.get("token") and _age_of(entry) < (CACHE_TTL_SECONDS if ttl is None else ttl):
         return entry["token"]
 
     data = _request(f"/token/{broker}")

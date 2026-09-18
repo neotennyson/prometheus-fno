@@ -419,3 +419,24 @@ The system runs itself via macOS launchd agents (`ops/install-automation.sh`):
   build pending — see roadmap item 7).
 - **Manual overrides:** everything in `scripts/` still runs standalone; launchd
   only automates the schedule. Uninstall: `launchctl unload ~/Library/LaunchAgents/com.prometheus.*.plist`.
+
+---
+
+## 15. Token self-service API (source of truth, added Sep 2026)
+
+Broker tokens are served by the operator's private token API:
+
+    Base:  https://tokens.example.invalid
+    Auth:  X-API-Key: <TOKEN_API_KEY from .env>
+    GET   /token/dhan | /token/groww | /token/all -> {"token","expiry"}
+    POST  /refresh  -> force regeneration (only on 401/403/token-expired)
+
+Module: `src/brokers/tokens.py` (stdlib only).
+`get_token(broker)` is THE point-of-use getter: 6 h cache in
+`~/.broker_tokens.json` (chmod 600), legacy manual-token fallback when
+`TOKEN_API_KEY` is unset. `refresh_and_get(broker)` = POST /refresh → wait 5 s
+→ refetch. `DhanClient._request_with_auth_recovery` retries once on 401/403
+using it. Daily 08:45 launchd agent warms the cache before the 09:05 session.
+Legacy TOTP minting flows (`groww_auth`, token_renew --legacy) remain as
+fallback only. Tokens/API key are never printed, logged, or committed;
+.env is gitignored and untracked.

@@ -15,7 +15,7 @@ OUT = ROOT / "data" / "dhan"
 
 def get_client():
     from src.data.dhan_client import DhanClient
-    tok = os.environ.get("DHAN_ACCESS_TOKEN")
+    tok = broker_tokens.get_token("dhan") # was env read)
     cid = os.environ.get("DHAN_CLIENT_ID")
     if not tok or not cid:
         print("Set DHAN_ACCESS_TOKEN and DHAN_CLIENT_ID first:")

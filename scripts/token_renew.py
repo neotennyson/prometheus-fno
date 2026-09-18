@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.brokers import tokens as broker_tokens
 from src.brokers.groww_auth import generate_access_token, totp_now, write_env_token
 from src.config import ROOT, load_dotenv
 
@@ -103,11 +104,33 @@ def renew_dhan() -> bool:
     return False
 
 
+def warm_from_token_api() -> bool:
+    """TOKEN_API_KEY mode: the private token API is the source of truth --
+    fetch/warm cache for both brokers; broker-side TOTP minting not needed."""
+    ok = True
+    for broker in ("dhan", "groww"):
+        try:
+            tok = broker_tokens.get_token(broker)
+            print(f"[{broker}] OK -- token via token API "
+                  f"({len(tok)} chars, cached in ~/.broker_tokens.json)")
+        except Exception as exc:
+            print(f"[{broker}] FAIL -- {exc}")
+            ok = False
+    return ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--broker", choices=["groww", "dhan", "all"], default="all")
+    ap.add_argument("--legacy", action="store_true",
+                    help="force broker-side TOTP flows even when TOKEN_API_KEY is set")
     args = ap.parse_args()
     load_dotenv()
+
+    if os.environ.get("TOKEN_API_KEY") and not args.legacy:
+        results = [warm_from_token_api()]
+        print(f"[token-renew] finished {datetime.now(IST_TZ()).strftime('%d %b %H:%M %Z')}")
+        return 0 if all(results) else 1
 
     results = []
     if args.broker in ("groww", "all"):

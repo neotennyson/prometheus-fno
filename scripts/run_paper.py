@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -50,6 +51,14 @@ def main():
         if args.synthetic:
             print("refusing live mode with --synthetic")
             sys.exit(1)
+        # HARD GATE: live mode requires BOTH an Algo-ID (SEBI requirement)
+        # and an explicit LIVE_CONFIRMED=yes in the environment. No accidental
+        # real-money mode, ever.
+        if os.environ.get("LIVE_CONFIRMED") != "yes":
+            raise SystemExit(
+                "REFUSED: --mode live needs both DHAN_ALGO_ID set AND "
+                "LIVE_CONFIRMED=yes in the environment. Paper mode is the default "
+                "and only automated mode.")
         broker = DhanBroker(client, dry_run=False)
         print("[warn] LIVE MODE — real orders. SEBI algo framework requires registered Algo-ID + static IP.")
     else:

@@ -99,6 +99,25 @@ for WD in 1 2 3 4 5; do
 EOF
 done
 
+
+# 4b. dashboard under launchd (survives reboot, auto-restart)
+cat > "$PLIST_DIR/com.prometheus.dashboard.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.prometheus.dashboard</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>-lc</string><string>cd '$REPO' && while true; do (.venv/bin/streamlit run src/command_center.py --server.port 8501 --server.headless true > logs/dash_daemon.log 2>&1 &) || true; sleep 300; done</string>
+  </array>
+  <key>WorkingDirectory</key><string>$REPO</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$REPO/logs/launchd_dashboard.log</string>
+  <key>StandardErrorPath</key><string>$REPO/logs/launchd_dashboard.log</string>
+</dict></plist>
+EOF
+
+
 # 5. weekly evolution generation, Sunday 10:00
 cat > "$PLIST_DIR/com.prometheus.evolve.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>

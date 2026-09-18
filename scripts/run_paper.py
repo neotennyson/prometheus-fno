@@ -42,8 +42,7 @@ def main():
     client = None
     if not args.synthetic:
         from src.data.dhan_client import DhanClient
-        client = DhanClient.from_env(cfg.raw["execution"]["dhan"]["access_token_env"],
-                                     cfg.raw["execution"]["dhan"]["client_id_env"])
+        client = DhanClient.from_env()  # token via token API / .env fallback
 
     quote_fn = build_quote_fn(client)
 

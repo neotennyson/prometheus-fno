@@ -342,6 +342,13 @@ def main():
 
     tabs = st.tabs(["👀 NEWS WATCH", "💸 MONEY", "🧪 IDEAS", "📖 HOW IT WORKS"])
 
+    st.markdown(f"""
+<div style="text-align:center;padding:18px 0 8px;color:#5B6675;font-size:.78rem;letter-spacing:.12em">
+<span style="background:linear-gradient(90deg,{ACCENT},{VIOLET});-webkit-background-clip:text;
+-webkit-text-fill-color:transparent;font-weight:800;letter-spacing:.3em">PROMETHEUS</span>
+&nbsp;·&nbsp; powered by <b style="color:#8B98A9">GLM 5.3 Flash</b>
+</div>""", unsafe_allow_html=True)
+
     # --------------------------------------------------------- NEWS WATCH
     with tabs[0]:
         st.markdown('<h2 class="sect">WHAT THE WATCHMAN IS READING RIGHT NOW</h2>',

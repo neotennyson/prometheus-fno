@@ -1,12 +1,8 @@
-"""PROMETHEUS Command Center — simple, honest, one glance.
+"""PROMETHEUS Command Center — professional trading desk aesthetic.
 
-Three big ON/OFF cards. Then three doors:
-  NEWS WATCH  — every source ARGUS reads, live stream, macro pulse
-  MONEY       — the trading engines' simulated scoreboard + state
-  IDEAS       — the research lab: tested/alive/dead, live-test queue
-  HOW IT WORKS— plain-language explanation + start commands
-
-Launch:  bash scripts/launch.sh   (starts ARGUS + this dashboard)
+Design reference: Linear/Stripe surfaces + Bloomberg data density.
+One accent, semantic red/green only for money, monospace numerics,
+no emoji, no gradients, no glow.
 """
 from __future__ import annotations
 
@@ -16,53 +12,93 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 IST = timezone(timedelta(hours=5, minutes=30))
 
-ACCENT, GOOD, BAD, WARN = "#00E5FF", "#00E676", "#FF5252", "#FFC400"
-VIOLET, BG, CARD, BORDER = "#7C4DFF", "#07090F", "#0D1117", "#1B2230"
+# ---- palette (zinc-scale neutrals + one blue accent + semantic money colors)
+BG, SURFACE, SURFACE2 = "#0B0C0E", "#141619", "#1A1D21"
+BORDER, BORDER2 = "#24272C", "#2E3238"
+TEXT, MUTED, FAINT = "#E8EAED", "#9BA1A9", "#5F6670"
+ACCENT = "#5B8DEF"
+POS, NEG, WARN = "#3DD68C", "#F65A5A", "#E8B04B"
 
-st.set_page_config(page_title="PROMETHEUS", page_icon="◈", layout="wide")
+st.set_page_config(page_title="PROMETHEUS", page_icon="●", layout="wide")
 
 CSS = f"""
 <style>
-    .stApp {{ background: radial-gradient(1100px 700px at 75% -10%, #101828 0%, {BG} 55%); color:#E6EDF3; }}
-    #MainMenu, footer, header {{ visibility:hidden }}
-    .title {{
-        font-size:2.5rem; font-weight:900; letter-spacing:.32em;
-        background:linear-gradient(90deg,{ACCENT},{GOOD} 40%,#7C4DFF 75%,{WARN});
-        -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    }}
-    .sub {{ color:#8B98A9; letter-spacing:.24em; font-size:.72rem; margin-top:-6px }}
-    .pill {{ display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:999px;
-            font-size:.74rem; font-weight:700; border:1px solid {BORDER}; background:{CARD};
-            color:#B8C4D0; margin-left:8px }}
-    @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
-    .dot {{ width:9px;height:9px;border-radius:50%;background:{GOOD}; animation:pulse 1.6s infinite }}
-    .dot.off {{ background:#667085; animation:none }}
-    .card {{ background:linear-gradient(180deg,{CARD} 0%,#0A0E16 100%);
-            border:1px solid {BORDER}; border-radius:16px; padding:20px 22px; margin-bottom:14px }}
-    .big {{ font-size:1.35rem; font-weight:800 }}
-    .plain {{ color:#98A2B3; font-size:.9rem; line-height:1.7 }}
-    .kpi-label {{ color:#7D8A99; font-size:.72rem; letter-spacing:.14em; font-weight:700 }}
-    .kpi-value {{ font-size:1.6rem; font-weight:800; margin-top:6px }}
-    .pos {{ color:{GOOD} }} .neg {{ color:{BAD} }} .neu {{ color:{ACCENT} }}
-    code {{ color:#67E8F9 !important; background:#0C1420 !important; padding:2px 6px !important;
-           border-radius:6px }}
-    h2.sect {{ font-size:.78rem; letter-spacing:.28em; color:#8B98A9; font-weight:800;
-              text-transform:uppercase; border-bottom:1px solid {BORDER}; padding-bottom:8px }}
-    .badge {{ padding:3px 12px; border-radius:999px; font-size:.7rem; font-weight:800 }}
-    .b-stop {{ background:#2E1215; color:{BAD} }}
-    .b-pause {{ background:#2E2410; color:{WARN} }}
-    .b-info {{ background:#161D29; color:#8B98A9 }}
-    .stTabs [data-baseweb="tab-list"] {{ gap:4px; border-bottom:1px solid {BORDER} }}
-    .stTabs [data-baseweb="tab"] {{ padding:10px 20px; color:#8B98A9; font-size:.82rem;
-                                   font-weight:800; letter-spacing:.08em }}
-    .stTabs [aria-selected="true"] {{ color:{ACCENT}; border-bottom:2px solid {ACCENT} }}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+.stApp {{ background:{BG}; color:{TEXT}; font-family:'Inter',-apple-system,sans-serif; }}
+#MainMenu, footer, header {{ visibility:hidden }}
+section[data-testid="stMain"] {{ padding-top:.6rem }}
+
+.brand {{ font-weight:700; font-size:1.05rem; letter-spacing:-.01em; color:{TEXT};
+         display:flex; align-items:center; gap:10px }}
+.brand .mark {{ width:10px; height:10px; background:{ACCENT}; border-radius:3px;
+                box-shadow:0 0 0 4px rgba(91,141,239,.12) }}
+.brand .env {{ font-family:'JetBrains Mono',monospace; font-size:.62rem; color:{FAINT};
+               border:1px solid {BORDER}; border-radius:4px; padding:1px 6px;
+               text-transform:uppercase; letter-spacing:.08em }}
+.hdr-meta {{ font-family:'JetBrains Mono',monospace; font-size:.7rem; color:{MUTED};
+             text-align:right; line-height:1.7 }}
+
+.sec {{ font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:{MUTED};
+        font-weight:600; margin:1.4rem 0 .55rem 0 }}
+
+.panel {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:10px;
+          padding:16px 18px }}
+.panel .lbl {{ font-size:.66rem; letter-spacing:.09em; text-transform:uppercase;
+               color:{MUTED}; font-weight:600; margin-bottom:4px }}
+.panel .val {{ font-family:'JetBrains Mono',monospace; font-size:1.45rem; font-weight:600;
+               letter-spacing:-.02em; font-variant-numeric:tabular-nums }}
+.panel .sub {{ font-size:.74rem; color:{FAINT}; margin-top:4px }}
+.pos {{ color:{POS} }} .neg {{ color:{NEG} }} .neu {{ color:{TEXT} }}
+
+.strow {{ display:flex; align-items:center; gap:14px; padding:13px 18px;
+          background:{SURFACE}; border:1px solid {BORDER}; border-radius:10px }}
+.strow + .strow {{ margin-top:8px }}
+.strow .nm {{ font-weight:600; font-size:.92rem; width:130px }}
+.strow .ds {{ color:{MUTED}; font-size:.8rem; flex:1; line-height:1.5 }}
+.strow .st {{ font-family:'JetBrains Mono',monospace; font-size:.68rem; letter-spacing:.1em;
+              display:flex; align-items:center; gap:6px }}
+.dot {{ width:7px; height:7px; border-radius:50%; display:inline-block }}
+.d-on {{ background:{POS} }} .d-off {{ background:{FAINT} }} .d-warn {{ background:{WARN} }}
+
+code {{ color:{ACCENT} !important; background:{SURFACE2} !important;
+        padding:1px 6px !important; border-radius:4px !important;
+        font-family:'JetBrains Mono',monospace !important; font-size:.82em !important }}
+
+div[data-testid="stDataFrame"] {{ border:1px solid {BORDER}; border-radius:10px; overflow:hidden }}
+div[data-testid="stDataFrame"] thead tr th {{
+    background:{SURFACE2} !important; color:{MUTED} !important;
+    font-size:.7rem !important; letter-spacing:.05em; text-transform:uppercase;
+    font-weight:600 !important }}
+div[data-testid="stDataFrame"] td {{ font-family:'JetBrains Mono',monospace !important;
+                                     font-size:.78rem !important }}
+
+.stTabs [data-baseweb="tab-list"] {{ gap:0; border-bottom:1px solid {BORDER} }}
+.stTabs [data-baseweb="tab"] {{ padding:9px 18px; color:{MUTED}; font-size:.8rem;
+                               font-weight:500; border-bottom:2px solid transparent }}
+.stTabs [aria-selected="true"] {{ color:{TEXT}; border-bottom:2px solid {ACCENT} }}
+.stTabs [data-baseweb="tab-highlight"] {{ display:none }}
+
+.feed {{ font-family:'JetBrains Mono',monospace; font-size:.76rem; line-height:1.9 }}
+.feed .row {{ padding:5px 0; border-bottom:1px solid #1A1D21; display:flex; gap:10px }}
+.feed .tm {{ color:{FAINT}; width:52px; flex-shrink:0 }}
+.feed .src {{ color:{MUTED}; width:200px; flex-shrink:0; overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap }}
+.feed .hl {{ color:{TEXT}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }}
+.sev {{ width:8px; height:8px; border-radius:2px; margin-top:6px; flex-shrink:0 }}
+.s3 {{ background:{NEG} }} .s2 {{ background:{WARN} }} .s1 {{ background:#3A3F46 }}
+
+.legend {{ font-size:.74rem; color:{MUTED}; line-height:1.9 }}
+.sw {{ display:inline-block; width:8px; height:8px; border-radius:2px; margin:0 5px 0 12px }}
+
+.foot {{ text-align:center; padding:2.2rem 0 .6rem; color:{FAINT}; font-size:.7rem }}
+.foot b {{ color:{MUTED}; letter-spacing:.06em }}
 </style>"""
 
 
@@ -77,14 +113,14 @@ def money(x):
         return "—"
 
 
-def kpi(col, label, value, sub="", cls=""):
-    col.markdown(f'<div class="card"><div class="kpi-label">{label}</div>'
-                 f'<div class="kpi-value {cls}">{value}</div>'
-                 f'<div class="plain" style="font-size:.78rem;margin-top:4px">{sub}</div></div>',
+def panel(col, label, value, sub="", cls=""):
+    sub_html = f'<div class="sub">{sub}</div>' if sub else ""
+    col.markdown(f'<div class="panel"><div class="lbl">{label}</div>'
+                 f'<div class="val {cls}">{value}</div>{sub_html}</div>',
                  unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------- loaders
+# ------------------------------------------------------------------ loaders
 @st.cache_data(ttl=600)
 def load_json(rel: str):
     p = ROOT / rel
@@ -108,8 +144,7 @@ def load_pnl() -> pd.DataFrame:
 @st.cache_data(ttl=30)
 def load_fills() -> pd.DataFrame:
     db = ROOT / "logs" / "trinity_trades.db"
-    p = Path(db)
-    if not p.exists():
+    if not db.exists():
         return pd.DataFrame()
     try:
         con = sqlite3.connect(db)
@@ -132,7 +167,7 @@ def load_session_state() -> dict:
 
 
 @st.cache_data(ttl=60)
-def load_news_events(hours: int = 6) -> pd.DataFrame:
+def load_news_events() -> pd.DataFrame:
     db = ROOT / "logs" / "news.db"
     if not db.exists():
         return pd.DataFrame()
@@ -172,54 +207,42 @@ def market_status():
     now = datetime.now(IST)
     t = now.hour * 60 + now.minute
     if now.weekday() >= 5:
-        return "WEEKEND — closed", False
+        return "CLOSED", False, "weekend"
     if 555 <= t < 930:
-        return "MARKET LIVE", True
-    return "MARKET CLOSED", False
+        return "OPEN", True, "live session"
+    return "CLOSED", False, "after hours"
 
 
 SOURCE_LABELS = {
-    "economictimes.indiatimes.com": "Economic Times — markets desk",
-    "www.moneycontrol.com": "Moneycontrol — business news",
-    "www.business-standard.com": "Business Standard — markets",
-    "www.livemint.com": "Livemint — markets",
-    "feeds.bbci.co.uk": "BBC — world business",
-    "www.federalreserve.gov": "US Fed — policy decisions",
-    "news.google.com": "News mirrors: RBI · SEBI · elections · budget",
-    "www.reddit.com": "Trader chatter — r/IndianStockMarket",
-    "stocktwits": "StockTwits — $NIFTY chatter",
-    "manual": "Manual — webhook alerts you sent",
+    "economictimes.indiatimes.com": "Economic Times",
+    "www.moneycontrol.com": "Moneycontrol",
+    "www.business-standard.com": "Business Standard",
+    "www.livemint.com": "Livemint",
+    "feeds.bbci.co.uk": "BBC Business",
+    "www.federalreserve.gov": "US Federal Reserve",
+    "news.google.com": "News mirrors (RBI·SEBI·budget)",
+    "www.reddit.com": "Reddit — IndianStockMarket",
+    "stocktwits": "StockTwits chatter",
+    "manual": "Webhook (manual)",
 }
 
 
-def sev_badge(x):
-    try:
-        imp = int(x)
-    except (TypeError, ValueError):
-        return ""
-    if imp >= 3:
-        return '<span class="badge b-stop">STOP</span>'
-    if imp >= 2:
-        return '<span class="badge b-pause">PAUSE</span>'
-    return '<span class="badge b-info">news</span>'
-
-
-# ---------------------------------------------------------------- figures
+# ------------------------------------------------------------------ figures
 def equity_fig(pnl: pd.Series):
     eq = 500_000.0 + pnl.cumsum()
-    fig = go.Figure(go.Scatter(
-        x=eq.index, y=eq.values, fill="tozeroy",
-        line=dict(color=ACCENT, width=1.8), fillcolor="rgba(0,229,255,0.07)",
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=eq.index, y=eq.values, line=dict(color=ACCENT, width=1.6),
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"))
-    fig.add_hline(y=500_000.0, line_dash="dot", line_color="#334155",
-                  annotation_text="started with ₹5L (simulated)",
-                  annotation_font_color="#667085")
-    fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10),
-                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      yaxis=dict(gridcolor="#141B26", tickprefix="₹", tickformat=",.0s",
-                                 tickfont=dict(color="#8B98A9")),
-                      xaxis=dict(gridcolor="#12181F", tickfont=dict(color="#8B98A9")),
-                      showlegend=False, hovermode="x")
+    fig.add_hline(y=500_000.0, line_color=BORDER2, line_width=1)
+    fig.update_layout(
+        height=300, margin=dict(l=52, r=14, t=8, b=28),
+        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, font=dict(color=MUTED),
+        yaxis=dict(gridcolor="#1D2025", tickprefix="₹", tickformat=",.0s",
+                   tickfont=dict(family="JetBrains Mono", size=10),
+                   zeroline=False),
+        xaxis=dict(gridcolor="#15171B", tickfont=dict(family="JetBrains Mono", size=10)),
+        showlegend=False, hovermode="x unified")
     return fig
 
 
@@ -228,35 +251,45 @@ def monthly_cal(pnl: pd.Series):
     txt = [[f"{v/1000:+.0f}k" if v == v else "" for v in row] for row in m.values]
     fig = go.Figure(go.Heatmap(
         z=m.values, x=[f"M{c}" for c in m.columns], y=m.index.astype(str),
-        colorscale=[[0, BAD], [0.02, "#1B2230"], [0.5, "#0F2E24"], [1, GOOD]],
-        zmid=0, showscale=False, xgap=3, ygap=3, text=txt,
-        texttemplate="%{text}", textfont=dict(size=9)))
-    fig.update_layout(height=210, margin=dict(l=10, r=10, t=6, b=6),
-                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      xaxis=dict(tickfont=dict(size=9, color="#667085")),
-                      yaxis=dict(tickfont=dict(size=11, color="#8B98A9")))
+        colorscale=[[0, "#7A2B2B"], [0.35, "#3A2224"], [0.49, "#1E2126"],
+                    [0.51, "#1B2A24"], [0.75, "#1F5C40"], [1, "#2E8B5F"]],
+        zmid=0, showscale=False, xgap=2, ygap=2, text=txt,
+        texttemplate="%{text}", textfont=dict(family="JetBrains Mono", size=8)))
+    fig.update_layout(height=200, margin=dict(l=6, r=6, t=4, b=4),
+                      paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
+                      xaxis=dict(tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
+                      yaxis=dict(tickfont=dict(family="JetBrains Mono", size=9, color=MUTED)))
     return fig
 
 
-# -------------------------------------------------------------------- main
+def engine_bars(pnl_df: pd.DataFrame):
+    cols = [c for c in ("iron_fly", "gap", "overnight") if c in pnl_df.columns]
+    if not cols:
+        return None
+    cum = pnl_df[cols].cumsum().iloc[-1].sort_values()
+    names = {"iron_fly": "Iron Fly · Tue 0DTE", "gap": "Gap Reversion",
+             "overnight": "Overnight Drift"}
+    colors = [POS if v >= 0 else NEG for v in cum.values]
+    fig = go.Figure(go.Bar(
+        y=[names.get(k, k) for k in cum.index], x=cum.values, orientation="h",
+        marker=dict(color=colors), width=0.45,
+        text=[money(v) for v in cum.values], textposition="outside",
+        textfont=dict(family="JetBrains Mono", color=MUTED, size=10)))
+    fig.update_layout(height=150, margin=dict(l=6, r=100, t=4, b=4),
+                      paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
+                      xaxis=dict(visible=False),
+                      yaxis=dict(tickfont=dict(size=11, color=TEXT)))
+    return fig
+
+
+def strow(name, detail, status, dot_cls):
+    return (f'<div class="strow"><span class="dot {dot_cls}"></span>'
+            f'<span class="nm">{name}</span><span class="ds">{detail}</span>'
+            f'<span class="st">{status}</span></div>')
+
+
 def main():
     inject()
-    # ---- access gate: required whenever the dashboard is exposed online ----
-    import os
-    code = os.environ.get("PROMETHEUS_DASH_CODE", "")
-    if code:
-        ok = st.session_state.get("auth") == code
-        if not ok:
-            st.markdown('<div class="title">PROMETHEUS</div>', unsafe_allow_html=True)
-            guess = st.text_input("Access code", type="password")
-            if st.button("Enter"):
-                if guess == code:
-                    st.session_state["auth"] = code
-                    st.rerun()
-                else:
-                    st.error("Wrong code")
-            return
-
     report = load_json("results/backtest_report.json")
     pnl_df = load_pnl()
     ledger = load_csv("results/atlas/ledger.csv")
@@ -266,312 +299,274 @@ def main():
     ev_cfg = load_feeds_cfg()
     news = fetch_argus("status")
     pulse = fetch_argus("pulse")
-    events_db = load_news_events(6)
+    events_db = load_news_events()
     now = datetime.now(IST)
-    mkt, live = market_status()
+    mkt, live, mkt_sub = market_status()
     argus_on = news is not None
 
-    # last ledger activity, fills today
     ledger_p = ROOT / "results/atlas/ledger.csv"
-    ledger_ts = datetime.fromtimestamp(ledger_p.stat().st_mtime) if ledger_p.exists() else None
+    ledger_ts = datetime.fromtimestamp(ledger_p.stat().st_mtime).strftime("%d %b %H:%M") \
+        if ledger_p.exists() else "—"
     fills_today = 0
     if len(fills):
         try:
             fills_today = int((pd.to_datetime(fills["ts"]).dt.date == now.date()).sum())
         except Exception:
             fills_today = 0
-    sess_today = state and state.get("date") == now.date().isoformat()
+    sess_today = bool(state) and state.get("date") == now.date().isoformat()
 
-    # ------------------------------------------------------------- header
-    hl, hr = st.columns([3, 2])
-    hl.markdown('<div class="title">PROMETHEUS</div>'
-                '<div class="sub">YOUR TRADING BOT — ONE GLANCE</div>',
-                unsafe_allow_html=True)
-    hr.markdown(
-        f'<div style="text-align:right;margin-top:12px">'
-        f'<span class="pill"><span class="dot {"off" if not live else ""}"></span>{mkt}</span>'
-        f'<span class="pill"><span class="dot {"off" if not argus_on else ""}"></span>'
-        f'NEWS WATCH {"ON" if argus_on else "OFF"}</span>'
-        f'<span class="pill">{now.strftime("%d %b · %H:%M IST")}</span></div>',
+    # ---------------------------------------------------------------- header
+    hl, hr = st.columns([2, 1])
+    with hl:
+        st.markdown(f'<div class="brand"><span class="mark"></span>PROMETHEUS'
+                    f'<span class="env">paper</span></div>',
+                    unsafe_allow_html=True)
+    with hr:
+        st.markdown(f'<div class="hdr-meta">{mkt} · {mkt_sub}<br>'
+                    f'{now.strftime("%a %d %b · %H:%M IST")} · '
+                    f'argus {"on" if argus_on else "off"}</div>',
+                    unsafe_allow_html=True)
+
+    st.markdown('<div class="sec">System status</div>', unsafe_allow_html=True)
+    st.markdown(
+        strow("EMBER", f"Execution engines — {fills_today} trades today · "
+                       f"{'in session' if sess_today else 'idle until next open'}",
+              "RUNNING" if sess_today else "SCHEDULED",
+              "d-on" if sess_today else "d-warn")
+        + strow("ANVIL", f"Research lab — {len(ledger):,} ideas tested · {len(queue)} in live-test queue",
+                "ACTIVE", "d-on")
+        + strow("ARGUS", f"24/7 watch — {ev_cfg.get('feeds', []).__len__()} sources · "
+                         f"{news.get('headlines_seen', 0) if news else 0} items in memory",
+                "ONLINE" if argus_on else "OFFLINE",
+                "d-on" if argus_on else "d-off"),
         unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh"):
-        st.cache_data.clear()
-        st.rerun()
+    # ------------------------------------------------------------------ KPIs
+    st.markdown('<div class="sec">Key numbers</div>', unsafe_allow_html=True)
+    comb = report.get("combined", {}).get("full", {})
+    oos_comb = report.get("combined", {}).get("oos", {})
+    iron_oos = report.get("iron_fly", {}).get("oos", {})
+    k1, k2, k3, k4 = st.columns(4)
+    panel(k1, "Core engine trust · OOS", f"{iron_oos.get('sharpe', '—')}",
+          "iron fly · from Jan 2024", "pos")
+    panel(k2, "Book CAGR · OOS", f"{oos_comb.get('cagr_pct', '—')}%",
+          "combined engines, recent regime", "pos")
+    panel(k3, "Simulated total P&L", money(comb.get("total_pnl", 0)),
+          f"{comb.get('years', '—')} years · all costs in", "pos")
+    panel(k4, "Ideas tested", f"{len(ledger):,}", f"ledger updated {ledger_ts}", "neu")
 
-    st.markdown("""
-<div class="plain" style="margin-top:2px">
-<b style="color:#E6EDF3">This bot has three jobs, each by a different machine:</b><br>
-① <b>MONEY</b> — trades the market on proven moves (simulated so far, real-money path gated) ·
-② <b>IDEAS</b> — tests new strategies nonstop and kills the losers ·
-③ <b>NEWS WATCH</b> — reads the world 24/7 and stops the bot when something big is happening.
-</div>""", unsafe_allow_html=True)
+    tabs = st.tabs(["NEWS WATCH", "PORTFOLIO", "RESEARCH", "GUIDE"])
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ---------------------------------------------------- 3 status cards
-    c1, c2, c3 = st.columns(3)
-    for col, (name, icon, color, on, on_line, off_line, sub) in zip(
-            (c1, c2, c3), (
-                ("MONEY", "💸", ACCENT, sess_today,
-                 f"Watching the market now",
-                 "Waiting for market hours",
-                 f"{fills_today} trades today · engine scoreboard in tab ②"),
-                ("IDEAS", "🧪", VIOLET, len(ledger) > 0,
-                 f"{len(ledger):,} ideas tested so far",
-                 "No research data yet — run scripts/evolve.py",
-                 f"alive: {len(queue)} · killed: {len(ledger) - len(queue):,}"),
-                ("NEWS WATCH", "👀", GOOD, argus_on,
-                 "Reading 11 sources + six markets now",
-                 "Off — run bash scripts/argus.sh start",
-                 f"{news.get('headlines_seen', 0)} items in memory · pulse {pulse.get('score', '—') if pulse else '—'}"),
-            )):
-        dot = "" if on else "off"
-        col.markdown(
-            f'<div class="card" style="border-left:4px solid {color}">'
-            f'<div class="kpi-label">{icon} {name}</div>'
-            f'<div class="big">{on_line if on else off_line}</div>'
-            f'<div class="plain" style="margin-top:6px">{sub}</div></div>',
-            unsafe_allow_html=True)
-
-    st.markdown(f"""
-<div class="card" style="padding:14px 22px">
-<b style="color:{ACCENT}">Quick status:</b>
-{"The money engine is in its paper phase — no real rupee moves yet. Tested honesty first; real money comes only after weeks of live-market rehearsal." if True else ""}
-</div>""", unsafe_allow_html=True)
-
-    tabs = st.tabs(["👀 NEWS WATCH", "💸 MONEY", "🧪 IDEAS", "📖 HOW IT WORKS"])
-
-    st.markdown(f"""
-<div style="text-align:center;padding:18px 0 8px;color:#5B6675;font-size:.78rem;letter-spacing:.12em">
-<span style="background:linear-gradient(90deg,{ACCENT},{VIOLET});-webkit-background-clip:text;
--webkit-text-fill-color:transparent;font-weight:800;letter-spacing:.3em">PROMETHEUS</span>
-&nbsp;·&nbsp; powered by <b style="color:#8B98A9">GLM 5.3 Flash</b>
-</div>""", unsafe_allow_html=True)
-
-    # --------------------------------------------------------- NEWS WATCH
+    # ------------------------------------------------------------ NEWS WATCH
     with tabs[0]:
-        st.markdown('<h2 class="sect">WHAT THE WATCHMAN IS READING RIGHT NOW</h2>',
-                    unsafe_allow_html=True)
-
-        # pulse block
         if pulse:
             comps = pulse.get("components", {})
-            p0 = st.columns(1)[0]
-            lvl_cls = {"calm": (GOOD, "CALM"), "elevated": (WARN, "ELEVATED"),
-                       "risk_off": (BAD, "RISK OFF")}.get(pulse.get("level"),
-                                                         (GOOD, "CALM"))
+            lvl = pulse.get("level", "calm")
+            color = {"calm": POS, "elevated": WARN, "risk_off": NEG}.get(lvl, POS)
             st.markdown(
-                f'<div class="card"><span class="kpi-label">🌍 WORLD MOOD — overnight numbers</span>'
-                f'<div class="big" style="color:{lvl_cls[0]}">{pulse.get("score")}/100 · {lvl_cls[1]}</div>'
-                f'<div class="plain">updated {str(pulse.get("updated"))[:19]}</div></div>',
-                unsafe_allow_html=True)
-            chips = st.columns(max(len(comps), 1))
-            for col, (k, v) in zip(chips, comps.items()):
-                col.markdown(f"**{k.upper()}**  \n**{v:+.2f}%**", unsafe_allow_html=True)
+                f'<div class="panel" style="display:flex;align-items:center;gap:20px">'
+                f'<div><div class="lbl">Global pulse · overnight markets</div>'
+                f'<div class="val" style="color:{color}">{pulse.get("score")}/100</div></div>'
+                f'<div style="display:flex;gap:18px;flex-wrap:wrap;margin-left:auto">'
+                + "".join(f'<div><span style="font-size:.62rem;color:{FAINT};'
+                          f'text-transform:uppercase;letter-spacing:.08em">{k}</span><br>'
+                          f'<span style="font-family:JetBrains Mono,monospace;font-weight:600;'
+                          f'color:{NEG if v <= -1 else (TEXT if abs(v) >= .5 else POS)}">{v:+.2f}%</span></div>'
+                          for k, v in comps.items())
+                + '</div></div>', unsafe_allow_html=True)
         else:
-            st.error("NEWS WATCH is OFF. Start it: `bash scripts/argus.sh start`")
+            st.warning("ARGUS is offline — `bash scripts/argus.sh start`")
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<h2 class="sect">LIVE FEED — LAST THINGS IT READ</h2>',
+        st.markdown('<div class="sec">Live feed — latest reads</div>',
                     unsafe_allow_html=True)
         if len(events_db):
-            view = events_db.head(40).copy()
-            rows_html = ""
-            for _, r in view.iterrows():
+            rows = ""
+            for _, r in events_db.head(30).iterrows():
                 src = str(r.get("source", "")).split(":")[0]
-                when = str(r.get("seen_at", r.get("ts", "")))[11:19]
-                title = str(r.get("title", ""))[:110]
-                rows_html += (
-                    f'<div style="padding:8px 0;border-bottom:1px solid {BORDER};'
-                    f'font-size:.86rem;line-height:1.5">'
-                    f'<span style="color:#667085;font-size:.7rem">{when} · </span>'
-                    f'{sev_badge(r.get("impact", 0))} '
-                    f'<b style="color:#B8C4D0">{title}</b>'
-                    f'<div style="color:#667085;font-size:.7rem">{SOURCE_LABELS.get(src, src)}</div>'
-                    f'</div>')
-            st.markdown(rows_html, unsafe_allow_html=True)
+                when = str(r.get("seen_at", r.get("ts", "")))[11:16]
+                title = str(r.get("title", ""))[:100].replace("<", "&lt;")
+                imp = int(r.get("impact", 0) or 0)
+                sev = "s3" if imp >= 3 else ("s2" if imp >= 2 else "s1")
+                rows += (f'<div class="row"><span class="tm">{when}</span>'
+                         f'<span class="sev {sev}"></span><span class="src">'
+                         f'{SOURCE_LABELS.get(src, src)[:26]}</span>'
+                         f'<span class="hl">{title}</span></div>')
+            st.markdown(f'<div class="panel feed">{rows}</div>', unsafe_allow_html=True)
         else:
-            st.caption("Nothing read yet — starts when NEWS WATCH runs.")
+            st.caption("Journal empty — starts when ARGUS runs.")
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<h2 class="sect">THE SOURCES — EVERYTHING IT READS</h2>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec">Sources monitored</div>', unsafe_allow_html=True)
         feeds = ev_cfg.get("feeds", [])
-        if feeds:
-            rows = []
-            for url in feeds:
-                host = url.split("/")[2] if url.count("/") >= 2 else url
-                label = SOURCE_LABELS.get(host, host)
-                cnt = int((events_db["source"].str.split(":").str[0] == host).sum()) \
-                    if len(events_db) else 0
-                rows.append({"what it reads": label, "items in memory": cnt,
-                             "source": url.strip("http" + "" + "/") if False else url})
-            st.dataframe(pd.DataFrame(rows)[["what it reads", "items in memory"]],
-                         use_container_width=True, hide_index=True)
-            with st.expander("technical: exact feed URLs"):
-                for url in feeds:
-                    host = url.split("/")[2] if url.count("/") >= 2 else url
-                    st.code(url + f"    <- {SOURCE_LABELS.get(host, host)}", language=None)
-            st.caption("Sleeps checks: same feeds every ~2 minutes; macro markets every 15 min.")
-        else:
-            st.caption("No feeds configured.")
+        srows = []
+        for url in feeds:
+            host = url.split("/")[2] if url.count("/") >= 2 else url
+            cnt = int((events_db["source"].str.split(":").str[0] == host).sum()) \
+                if len(events_db) else 0
+            srows.append({"source": SOURCE_LABELS.get(host, host),
+                          "items (6h)": cnt})
+        st.dataframe(pd.DataFrame(srows), use_container_width=True, hide_index=True,
+                     height=320)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<h2 class="sect">IF SOMETHING BIG HAPPENS</h2>',
-                    unsafe_allow_html=True)
-        st.markdown("""
-<div class="plain">
-🔴 <b>STOP</b> — war, RBI shock, budget surprise, trading halt → the bot closes everything immediately and stays out.<br>
-🟡 <b>PAUSE</b> — SEBI action, tariffs, credit rating cuts → the bot stops opening new trades but holds current ones.<br>
-⚪ <b>news</b> — everything else, just logged. The watchman reads far more than it acts on.
+        st.markdown('<div class="sec">Response rules</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+<div class="legend">
+<span class="sw" style="background:{NEG}"></span><b>STOP</b> — war · RBI shock · budget surprise · trading halt → force-flat, stay out<br>
+<span class="sw" style="background:{WARN}"></span><b>PAUSE</b> — SEBI action · tariffs · rating cuts → no new entries<br>
+<span class="sw" style="background:#3A3F46"></span><b>logged</b> — everything else is journaled, no action
 </div>""", unsafe_allow_html=True)
 
-    # --------------------------------------------------------------- MONEY
+    # ------------------------------------------------------------- PORTFOLIO
     with tabs[1]:
-        st.markdown('<h2 class="sect">THE TRADING ENGINES (SIMULATED RESULTS)</h2>',
-                    unsafe_allow_html=True)
         rows = []
         for eng, label, story in (
-                ("iron_fly", "Tuesday premium seller", "sells option combos on expiry day, defined risk, the proven earner"),
-                ("gap", "Gap catcher", "rare: fades only abnormal openings"),
-                ("overnight", "Night holder", "holds overnight only when fear is high")):
+                ("iron_fly", "Iron Fly · Tue 0DTE", "sells defined-risk option combos on expiry day"),
+                ("gap", "Gap Reversion", "fades abnormal openings toward prior close"),
+                ("overnight", "Overnight Drift", "overnight long only when fear is high")):
             blk = (report.get(eng, {}).get("oos")
                    or report.get(eng, {}).get("is")
                    or report.get(eng, {}).get("full", {}))
             shp = float(blk.get("sharpe") or 0.0)
-            trust = "—" if not blk else f"{min(shp / 1.5, 5.0):.1f}"
-            rows.append({"engine": label, "what it does": story,
-                         "trust (0-5)": trust,
+            rows.append({"engine": label,
+                         "thesis": story,
+                         "trust (0–5)": "—" if not blk else f"{min(shp / 1.5, 5.0):.1f}",
                          "win rate": f"{blk.get('win_rate_pct', '—')}%",
                          "worst day": money(blk.get("worst_day", 0)),
-                         "trades made": blk.get("trade_days", "—")})
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-            st.caption("trust (0–5) = how steady it was on data it never saw during design.")
+                         "trades": blk.get("trade_days", "—")})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("trust = Sharpe ÷ 1.5 on data the engines never saw during design (Jan 2024 →)")
 
         if not pnl_df.empty and "combined" in pnl_df.columns:
-            st.markdown('<h2 class="sect">₹5L IF WE HAD STARTED IN 2019 (SIMULATED)</h2>',
+            st.markdown('<div class="sec">Equity — ₹5L start (simulated, full costs)</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(equity_fig(pnl_df["combined"]), use_container_width=True)
+            st.markdown('<div class="sec">Monthly P&L</div>', unsafe_allow_html=True)
             st.plotly_chart(monthly_cal(pnl_df["combined"]), use_container_width=True)
-            st.caption("Green month = made money, red = lost. All fees & taxes included.")
 
-        st.markdown('<h2 class="sect">SAFETY RULES (ALWAYS ON)</h2>',
+        bars = engine_bars(pnl_df) if not pnl_df.empty else None
+        if bars:
+            st.markdown('<div class="sec">Per-engine cumulative P&L</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(bars, use_container_width=True)
+
+        st.markdown('<div class="sec">Risk envelope (always armed)</div>',
                     unsafe_allow_html=True)
-        risk = load_risk_cfg()
+        import yaml as _yaml
+        risk = {}
+        cfgp = ROOT / "config" / "settings.yaml"
+        if cfgp.exists():
+            try:
+                risk = (_yaml.safe_load(cfgp.read_text()) or {}).get("risk", {})
+            except Exception:
+                pass
         st.markdown(f"""
-<div class="plain" style="line-height:2.0">
-🔒 Never lose more than <b>{risk.get('daily_loss_kill_pct', '2')}%</b> in one day — bot stops for the day.<br>
-🔒 Never lose more than <b>{risk.get('weekly_loss_kill_pct', '4')}%</b> in a week — bot stops for the week.<br>
-🔒 Any single trade risks <b>{risk.get('risk_per_trade_pct', '1')}%</b> of capital max.<br>
-🔒 Big scary news → NEW WATCH forces flat. Always.
+<div class="legend" style="background:{SURFACE};border:1px solid {BORDER};
+border-radius:10px;padding:12px 18px">
+daily loss kill <b style="color:{TEXT}">{risk.get('daily_loss_kill_pct', 2)}%</b>
+&nbsp;·&nbsp; weekly loss kill <b style="color:{TEXT}">{risk.get('weekly_loss_kill_pct', 4)}%</b>
+&nbsp;·&nbsp; per-trade risk <b style="color:{TEXT}">{risk.get('risk_per_trade_pct', 1)}%</b>
+&nbsp;·&nbsp; leverage cap <b style="color:{TEXT}">{risk.get('max_lots_per_10l', 3)} lots / ₹10L</b>
+&nbsp;·&nbsp; theta gate VIX <b style="color:{TEXT}">≤ {risk.get('vix_max_for_theta', 22)}</b>
 </div>""", unsafe_allow_html=True)
 
-        st.markdown('<h2 class="sect">LIVE/PAPER BOOK</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">Session book</div>', unsafe_allow_html=True)
         if state:
-            s1, s2 = st.columns(2)
-            kpi(s1, "TODAY'S SESSION", str(state.get("date", "—")), "")
-            kpi(s2, "REALIZED TODAY", money(state.get("realized", 0)),
-                "", "pos" if state.get("realized", 0) >= 0 else "neg")
+            s1, s2, s3 = st.columns(3)
+            panel(s1, "Session date", str(state.get("date", "—")))
+            panel(s2, "Realized today", money(state.get("realized", 0)),
+                  cls="pos" if state.get("realized", 0) >= 0 else "neg")
             pos = state.get("positions", {})
+            panel(s3, "Open positions", str(len(pos)))
             if pos:
-                st.dataframe(pd.DataFrame([{"strategy": k,
-                                            **{kk: vv for kk, vv in v.items()
-                                               if kk not in ("legs",)}}
-                                           for k, v in pos.items()]),
-                             use_container_width=True, hide_index=True)
-            else:
-                st.caption("No open positions in the book. It only trades inside its rules.")
+                st.dataframe(pd.DataFrame(
+                    [{"strategy": k, **{kk: vv for kk, vv in v.items() if kk != "legs"}}
+                     for k, v in pos.items()]),
+                    use_container_width=True, hide_index=True)
         else:
-            st.caption("No session yet today — starts automatically during market hours.")
+            st.caption("No session yet today.")
 
         if len(fills):
-            st.markdown('<h2 class="sect">RECENT FILLS</h2>', unsafe_allow_html=True)
+            st.markdown('<div class="sec">Recent fills</div>', unsafe_allow_html=True)
             cols = [c for c in ("ts", "strategy", "side", "qty", "px") if c in fills.columns]
-            st.dataframe(fills[cols], use_container_width=True, height=260)
+            st.dataframe(fills[cols], use_container_width=True, height=250)
 
-    # --------------------------------------------------------------- IDEAS
+    # -------------------------------------------------------------- RESEARCH
     with tabs[2]:
-        st.markdown('<h2 class="sect">THE IDEA FACTORY</h2>', unsafe_allow_html=True)
-        if len(ledger):
-            alive = int(ledger["promoted"].sum()) if "promoted" in ledger.columns else len(queue)
-            st.markdown(f"""
-<div class="card">
-<div class="plain">
-🧪 <b>Ideas tested so far: <span style="color:{ACCENT}">{len(ledger):,}</span></b> —
-how strategy ideas are born: each one is put through 12 years of Indian market data with
-every fee counted. Most <span style="color:{BAD}">fail</span> (they're recorded in the graveyard so we
-never fall for them twice). A few <span style="color:{GOOD}">survive</span> — those get a live rehearsal next.<br>
-✅ <b>Alive & waiting for live test: {len(queue)}</b> · ☠️ Killed by evidence: {len(ledger) - len(queue):,}
-</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+<div class="panel" style="display:flex;gap:40px">
+<div><div class="lbl">Ideas tested</div><div class="val" style="color:{TEXT}">{len(ledger):,}</div></div>
+<div><div class="lbl">Passed (queue)</div><div class="val" style="color:{POS}">{len(queue)}</div></div>
+<div><div class="lbl">Killed by evidence</div><div class="val" style="color:{NEG}">{len(ledger)-len(queue):,}</div></div>
+<div><div class="lbl">Survival rate</div><div class="val" style="color:{MUTED}">{(len(queue)/max(len(ledger),1)*100):.1f}%</div></div>
+</div>""", unsafe_allow_html=True)
+        st.caption("Every candidate runs 12+ years of real data with the full Indian cost "
+                   "stack. Conviction ≥ 0.60 promotes to paper. Losers are recorded forever.")
 
-            st.markdown('<h2 class="sect">WAITING FOR THEIR LIVE REHEARSAL</h2>',
-                        unsafe_allow_html=True)
-            if queue:
-                qdf = pd.DataFrame(queue)
-                cols = [c for c in ("family", "params", "score", "oos_sharpe",
-                                    "oos_cagr_pct", "quarters_hit", "n_trades")
-                        if c in qdf.columns]
-                st.dataframe(qdf[cols], use_container_width=True, hide_index=True)
-                st.caption("Paper test first for weeks. Only then does real money see them.")
-            else:
-                st.caption("Queue empty.")
-
-            st.markdown('<h2 class="sect">THE GRAVEYARD — IDEAS THAT LOST</h2>',
-                        unsafe_allow_html=True)
-            dead = ["classic trend (Donchian)", "coil-breakouts (NR7/inside-bar)",
-                    "melt-up grind", "catch-up gap (US-lag)", "time-of-day calendar",
-                    "NIFTY×BankNifty pairs", "52-week-high momentum", "raw gap fades",
-                    "compression-gated ORB", "daily breakout", "streak reversals"]
-            st.markdown("☠️ " + " · ".join(dead), unsafe_allow_html=True)
-            st.caption("Each one was tested with real data and killed by a number, not an opinion.")
+        st.markdown('<div class="sec">Live-test queue (paper next)</div>',
+                    unsafe_allow_html=True)
+        if queue:
+            qdf = pd.DataFrame(queue)
+            cols = [c for c in ("family", "params", "score", "oos_sharpe",
+                                "oos_cagr_pct", "n_trades", "quarters_hit")
+                    if c in qdf.columns]
+            st.dataframe(qdf[cols], use_container_width=True, hide_index=True)
         else:
-            st.info("No research yet — run `.venv/bin/python scripts/evolve.py`")
+            st.caption("Queue empty — run scripts/evolve.py for the next generation.")
 
-    # -------------------------------------------------------- HOW IT WORKS
+        if len(ledger):
+            best = ledger.sort_values("score", ascending=False).groupby("family").head(1) \
+                .sort_values("score", ascending=False)
+            st.markdown('<div class="sec">Family leaderboard</div>',
+                        unsafe_allow_html=True)
+            pick = st.selectbox("family", best["family"].tolist(), label_visibility="collapsed")
+            drill = ledger[ledger["family"] == pick].sort_values("score", ascending=False)
+            dcols = [c for c in ("params", "filter", "exit", "score", "full_sharpe",
+                                 "oos_sharpe", "oos_cagr_pct", "oos_max_dd_pct",
+                                 "oos_pf", "n_trades", "promoted") if c in drill.columns]
+            st.dataframe(drill[dcols], use_container_width=True, hide_index=True)
+
+            st.markdown('<div class="sec">The graveyard</div>', unsafe_allow_html=True)
+            wl = best[(best["score"] >= 0.45) & (best["score"] < 0.60)]
+            if len(wl):
+                st.caption("On the bubble: " + ", ".join(wl["family"]))
+            with st.expander("all killed families + evidence"):
+                st.dataframe(best[["family", "params", "exit", "score", "oos_sharpe",
+                                   "n_trades"]], use_container_width=True,
+                             hide_index=True)
+
+    # ----------------------------------------------------------------- GUIDE
     with tabs[3]:
-        st.markdown("""
-<div class="card plain">
-<b style="color:#E6EDF3">THE 60-SECOND EXPLANATION</b><br><br>
-1. <b>The market doesn't care how you feel.</b> So the bot never guesses — every move it makes
-was tested against 12 years of real NSE data with every fee, tax and slippage counted.<br><br>
-2. <b>Most ideas lose.</b> The Idea Factory tests thousands automatically (sell a bit,
-wait, buy the dip — any idea) and keeps only the ones that survive. Losers go to the
-graveyard with their crime scene photos.<br><br>
-3. <b>Survivors rehearse with fake money first.</b> For weeks, in the live market, at real
-prices. Only if the rehearsal matches the backtest does one rupee of real money move.<br><br>
-4. <b>The Watchman never sleeps.</b> Media, trader chatter, and overnight markets feed it.
-If something big is underway — war, shock rate hike, budget surprise — the bot closes up
-and waits.<br><br>
-5. <b>Stop-losses are laws, not suggestions.</b> -2% in a day and it's done for the day.
--4% in a week and it's done for the week. The goal is to still be trading next year.
+        st.markdown(f"""
+<div class="panel plain" style="font-size:.86rem;color:{MUTED};line-height:2.0">
+<b style="color:{TEXT}">How this bot earns money — the honest version</b><br><br>
+1. <b>No guessing.</b> Every trade idea is tested against 12+ years of real NSE data
+with every fee, tax, and slippage counted. Most ideas lose. Those are killed
+permanently and recorded.<br><br>
+2. <b>Survivors rehearse first.</b> Strategies that pass are paper-traded in the
+live market for weeks before a single real rupee moves — and the live result must
+match the backtest within 30%.<br><br>
+3. <b>The engines trade by schedule, not mood.</b> Tuesday expiry premium-selling
+(the proven earner), rare gap fades, overnight exposure only when fear is
+measurably high.<br><br>
+4. <b>The watchman overrides everything.</b> If something big is underway — war,
+shock rate hike, halt — the bot closes and waits. Reading far more than it acts
+on is the point.<br><br>
+5. <b>Losses have hard ceilings.</b> −2% in a day / −4% in a week and the machine
+stops itself. The edge only works if the account survives to use it.
 </div>""", unsafe_allow_html=True)
 
-        st.markdown('<h2 class="sect">START / STOP COMMANDS</h2>', unsafe_allow_html=True)
-        st.markdown("""
-```bash
-cd "/Users/USER/Documents/Default Project/fo-bot"
-bash scripts/launch.sh          # one command: starts NEWS WATCH + opens this dashboard
-bash scripts/argus.sh status    # is the watchman awake?
-bash scripts/argus.sh stop      # put the watchman to sleep
-.venv/bin/python scripts/run_paper.py --mode paper   # money engine, market hours only
-.venv/bin/python scripts/evolve.py                    # tell the idea factory to test more
-```
-""")
-        st.caption("Full documentation lives in the repo (README.md + PROMETHEUS-MODEL.md).")
+        st.markdown('<div class="sec">Operations</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+<div class="legend" style="background:{SURFACE};border:1px solid {BORDER};
+border-radius:10px;padding:14px 18px">
+<code>bash scripts/launch.sh</code> — dashboard + watchman, one command<br>
+<code>.venv/bin/python scripts/run_paper.py --mode paper</code> — manual session (normally launchd handles this)<br>
+<code>.venv/bin/python scripts/evolve.py</code> — force a research generation<br>
+<code>bash scripts/argus.sh status</code> — watchman health
+</div>""", unsafe_allow_html=True)
 
-
-@st.cache_data(ttl=600)
-def load_risk_cfg() -> dict:
-    import yaml
-    p = ROOT / "config" / "settings.yaml"
-    if not p.exists():
-        return {}
-    try:
-        return (yaml.safe_load(p.read_text()) or {}).get("risk", {})
-    except Exception:
-        return {}
+    st.markdown('<div class="foot"><b>PROMETHEUS</b> · powered by GLM 5.3 Flash · '
+                'simulated results, full cost stack · not financial advice</div>',
+                unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

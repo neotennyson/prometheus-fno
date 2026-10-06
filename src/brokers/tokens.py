@@ -55,16 +55,29 @@ def _save_cache(cache: dict) -> None:
         pass                                                # cache is best-effort
 
 
-def _request(path: str, method: str = "GET") -> dict:
-    req = urllib.request.Request(
+def _request(path: str, method: str = "GET", attempts: int = 3) -> dict:
+    """Fetch with network-failure retries (macOS wake races kill DNS briefly).
+    Retries on transport errors with backoff; 401 surfaces a distinct,
+    actionable error because a bad key cannot be fixed by retrying."""
+    req = lambda: urllib.request.Request(     # noqa: E731
         f"{API_BASE}{path}", method=method,
         headers={"X-API-Key": _api_key(), "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")[:200]
-        raise RuntimeError(f"token API HTTP {exc.code} for {path}: {body}") from None
+    last_exc = None
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req(), timeout=15) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")[:200]
+            if exc.code in (401, 403):
+                raise RuntimeError(
+                    f"token API HTTP {exc.code} for {path}: {body} "
+                    f"(key rejected — update TOKEN_API_KEY in .env)") from None
+            last_exc = RuntimeError(f"token API HTTP {exc.code}: {body}")
+        except Exception as exc:                      # DNS/timeout/wake races
+            last_exc = exc
+        time.sleep(min(5 * (i + 1), 15))
+    raise RuntimeError(f"token API unreachable after {attempts} tries: {last_exc}") from None
 
 
 def _age_of(entry: dict) -> float:

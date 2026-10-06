@@ -71,7 +71,9 @@ strategies:
     risk_pct: 0.5
 
   overnight_drift:
-    enabled: true
+    # disabled by evidence: OOS Sharpe 0.39 + untradeable at 5L capital
+    # (min_equity 20L). Re-enable only if OOS improves or capital >= 20L.
+    enabled: false
     min_equity: 2000000
     adverse_open_exit_pct: 1.5
     vix_min_gate: 17.0

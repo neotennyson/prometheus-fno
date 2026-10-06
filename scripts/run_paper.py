@@ -15,8 +15,18 @@ from src.orchestrator import Orchestrator, ist_now
 
 def build_quote_fn(client=None):
     if client is not None:
+        last_good = {}
+
         def q(seg, sid):
-            return client.ltp([(seg, sid)])
+            key = f"{seg}:{sid}"
+            try:
+                px = float(client.ltp([(seg, sid)]))
+                if px > 0:
+                    last_good[key] = px
+                    return px
+            except Exception:
+                pass
+            return last_good.get(key, 0.0)
         return q
 
     import random

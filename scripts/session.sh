@@ -32,8 +32,40 @@ while true; do
   echo "[session] pre-market, waiting..."; sleep 300
 done
 
+echo "[session] preflight $TODAY" >> "$LOG"
+$PY -c '
+from src.config import load_dotenv
+load_dotenv()
+import os, time
+from datetime import datetime, timezone
+from src.brokers.tokens import get_token
+for i in range(6):
+    try:
+        get_token("dhan"); print("[preflight] token OK"); raise SystemExit(0)
+    except Exception as e:
+        tok = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        ok = False
+        if tok and tok.count(".") == 2:
+            try:
+                import base64, json as J
+                pay = tok.split(".")[1]; pay += "=" * (-len(pay) % 4)
+                exp = J.loads(base64.urlsafe_b64decode(pay)).get("exp", 0)
+                if exp > datetime.now(timezone.utc).timestamp():
+                    ok = True
+            except Exception:
+                pass
+        if ok:
+            print("[preflight] API down, manual JWT valid — proceeding"); raise SystemExit(0)
+        print(f"[preflight] attempt {i+1} failed: {str(e)[:90]}; retry 90s")
+        time.sleep(90)
+raise SystemExit(1)
+' >> "$LOG" 2>&1 || { echo "[session] ABORT no usable token" >> "$LOG"; exit 1; }
+
 echo "[session] starting EMBER paper loop $TODAY" >> "$LOG"
-# token sanity: if creds missing/invalid the loop still runs but logs skips;
-# it also exits cleanly at square-off (15:18) via the orchestrator itself.
-$PY scripts/run_paper.py --mode paper >> "$LOG" 2>&1
+# run_paper dies before close -> relaunch up to 2x (network hiccups)
+for TRY in 1 2 3; do
+  $PY scripts/run_paper.py --mode paper >> "$LOG" 2>&1 && break
+  echo "[session] run_paper exited (try $TRY) — relaunching in 60s" >> "$LOG"
+  sleep 60
+done
 echo "[session] loop ended $TODAY" >> "$LOG"

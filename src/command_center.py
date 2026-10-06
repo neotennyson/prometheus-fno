@@ -1,144 +1,47 @@
-"""PROMETHEUS Command Center — marble, bronze, fire.
+"""PROMETHEUS Command Center — one-screen trading terminal.
 
-Real public-domain imagery (Pergamon Prometheus group, CC BY 4.0),
-inscriptional Cinzel + GFS Didot Greek typography, single bronze accent,
-ember fire reserved for the torch mark. Data stays in JetBrains Mono.
+Everything renders as a single custom HTML grid (dense tiles, terminal feed,
+SVG charts) — escaping Streamlit's template look entirely. Data from repo
+artifacts + ARGUS on localhost:8791.
 """
 from __future__ import annotations
 
+import html as _html
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parents[1]
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# ---- palette: dark marble / ivory / antique bronze / ember
-BG, SURFACE, SURFACE2 = "#131215", "#1B191D", "#232025"
-BORDER, BORDER2 = "#2E2B31", "#3A363D"
-IVORY, MUTED, FAINT = "#EAE4D8", "#A39B8B", "#6E6A5E"
-BRONZE, EMBER = "#C9A227", "#E8833A"
-POS, NEG, WARN = "#5FA97C", "#C96A5F", "#C9A227"
+st.set_page_config(page_title="PROMETHEVS", page_icon="🔥", layout="wide")
 
-st.set_page_config(page_title="PROMETHEUS", page_icon="🔥", layout="wide")
-
-CSS = f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=GFS+Didot&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-.stApp {{ background:{BG}; color:{IVORY}; font-family:'Inter',-apple-system,sans-serif; }}
-#MainMenu, footer, header {{ visibility:hidden }}
-
-.brandbar {{ display:flex; align-items:center; gap:12px; padding:14px 4px;
-            border-bottom:1px solid {BORDER} }}
-.brandbar .name {{ font-family:'Cinzel',serif; font-weight:700; font-size:1.28rem;
-                   letter-spacing:.34em; color:{IVORY} }}
-.brandbar .tag {{ font-family:'GFS Didot',serif; color:{FAINT}; font-size:.86rem;
-                  font-style:italic }}
-.brandbar .meta {{ margin-left:auto; font-family:'JetBrains Mono',monospace;
-                   font-size:.7rem; color:{MUTED}; text-align:right; line-height:1.7 }}
-.pill {{ display:inline-flex; align-items:center; gap:6px; padding:2px 10px;
-         border:1px solid {BORDER2}; border-radius:3px; font-size:.62rem;
-         letter-spacing:.12em; color:{MUTED}; font-weight:600; margin-left:8px }}
-.pill .dot {{ width:6px; height:6px; border-radius:50% }}
-
-.hero {{ display:flex; gap:26px; margin:20px 0 6px; align-items:stretch }}
-.hero .txt {{ flex:1.15 }}
-.hero .greek {{ font-family:'GFS Didot',serif; font-size:1.9rem; color:{IVORY}; line-height:1.35 }}
-.hero .greek .accent {{ color:{EMBER} }}
-.hero .motto {{ font-family:'Cinzel',serif; font-size:.72rem; letter-spacing:.42em;
-                color:{BRONZE}; margin:10px 0 14px }}
-.hero .line {{ color:{MUTED}; font-size:.86rem; line-height:1.75; max-width:560px }}
-.hero .img {{ flex:0.85; max-width:340px; display:flex; flex-direction:column }}
-.hero .img img {{ border-radius:6px; border:1px solid {BORDER2};
-                  filter:sepia(18%) contrast(105%); width:100% }}
-.hero .credit {{ font-size:.6rem; color:{FAINT}; margin-top:5px; line-height:1.5 }}
-
-.panel {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:8px;
-          padding:14px 16px }}
-.panel .lbl {{ font-size:.62rem; letter-spacing:.12em; text-transform:uppercase;
-               color:{MUTED}; font-weight:600; margin-bottom:3px }}
-.panel .val {{ font-family:'JetBrains Mono',monospace; font-size:1.32rem; font-weight:600;
-               font-variant-numeric:tabular-nums; letter-spacing:-.02em }}
-.panel .sub {{ font-size:.72rem; color:{FAINT}; margin-top:3px }}
-.pos {{ color:{POS} }} .neg {{ color:{NEG} }} .neu {{ color:{IVORY} }} .au {{ color:{BRONZE} }}
-
-.strow {{ display:flex; align-items:center; gap:14px; padding:12px 18px;
-          background:{SURFACE}; border:1px solid {BORDER}; border-radius:8px }}
-.strow + .strow {{ margin-top:7px }}
-.strow .nm {{ font-family:'Cinzel',serif; font-weight:600; font-size:.9rem;
-              letter-spacing:.18em; width:120px; color:{IVORY} }}
-.strow .ds {{ color:{MUTED}; font-size:.8rem; flex:1; line-height:1.5 }}
-.strow .st {{ font-family:'JetBrains Mono',monospace; font-size:.66rem; letter-spacing:.14em;
-              display:flex; align-items:center; gap:6px; color:{MUTED} }}
-.dot {{ width:7px; height:7px; border-radius:50%; display:inline-block }}
-.d-on {{ background:{POS} }} .d-off {{ background:{FAINT} }} .d-warn {{ background:{BRONZE} }}
-
-.sec {{ font-family:'Cinzel',serif; font-size:.72rem; letter-spacing:.3em;
-        text-transform:uppercase; color:{BRONZE}; margin:1.5rem 0 .6rem 0 }}
-
-code {{ color:{BRONZE} !important; background:{SURFACE2} !important;
-        padding:1px 6px !important; border-radius:4px !important;
-        font-family:'JetBrains Mono',monospace !important; font-size:.82em !important }}
-
-div[data-testid="stDataFrame"] {{ border:1px solid {BORDER}; border-radius:8px; overflow:hidden }}
-div[data-testid="stDataFrame"] thead tr th {{
-    background:{SURFACE2} !important; color:{MUTED} !important;
-    font-size:.68rem !important; letter-spacing:.07em; text-transform:uppercase;
-    font-weight:600 !important }}
-div[data-testid="stDataFrame"] td {{ font-family:'JetBrains Mono',monospace !important;
-                                     font-size:.76rem !important; color:{IVORY} !important }}
-
-.stTabs [data-baseweb="tab-list"] {{ gap:0; border-bottom:1px solid {BORDER} }}
-.stTabs [data-baseweb="tab"] {{ padding:9px 18px; color:{MUTED};
-    font-family:'Cinzel',serif; font-size:.78rem; letter-spacing:.2em;
-    border-bottom:2px solid transparent; font-weight:600 }}
-.stTabs [aria-selected="true"] {{ color:{EMBER}; border-bottom:2px solid {EMBER} }}
-.stTabs [data-baseweb="tab-highlight"] {{ display:none }}
-
-.feed {{ font-family:'JetBrains Mono',monospace; font-size:.74rem; line-height:1.9 }}
-.feed .row {{ padding:5px 0; border-bottom:1px solid #201D22; display:flex; gap:10px }}
-.feed .tm {{ color:{FAINT}; width:50px; flex-shrink:0 }}
-.feed .src {{ color:{MUTED}; width:190px; flex-shrink:0; overflow:hidden;
-              text-overflow:ellipsis; white-space:nowrap }}
-.feed .hl {{ color:{IVORY}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }}
-.sev {{ width:8px; height:8px; border-radius:2px; margin-top:6px; flex-shrink:0 }}
-.s3 {{ background:{NEG} }} .s2 {{ background:{BRONZE} }} .s1 {{ background:#3B3840 }}
-
-.legend {{ font-size:.78rem; color:{MUTED}; line-height:2.0 }}
-.sw {{ display:inline-block; width:8px; height:8px; border-radius:2px; margin:0 6px 0 10px }}
-
-.foot {{ text-align:center; padding:2.4rem 0 .7rem; color:{FAINT}; font-size:.72rem }}
-.foot .nm {{ font-family:'Cinzel',serif; letter-spacing:.28em; color:{MUTED}; font-size:.74rem }}
-</style>"""
-
-TORCH_SVG = """<svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12 2.2c1.9 2.1 3.4 3.9 3.4 6.1 0 1.5-.8 2.6-1.9 3.2.5-1.2.4-2.6-.7-4-.5 2.2-2.3 2.6-2.3 4.6 0 .8.3 1.4.8 1.9-1.7-.3-3-1.8-3-3.9 0-3 2.6-5 3.7-7.9z" fill="#E8833A"/>
-<path d="M12 16.6c1.7 0 3 1.3 3 2.9 0 1.4-1 2.3-1.6 2.3h-2.8c-.6 0-1.6-.9-1.6-2.3 0-1.6 1.3-2.9 3-2.9z" fill="#C9A227"/>
-</svg>"""
+TORCH_SVG = ('<svg class="torch" viewBox="0 0 24 24">'
+             '<path d="M12 2.2c1.9 2.1 3.4 3.9 3.4 6.1 0 1.5-.8 2.6-1.9 3.2.5-1.2.4-2.6-.7-4-.5 2.2-2.3 2.6-2.3 4.6 0 .8.3 1.4.8 1.9-1.7-.3-3-1.8-3-3.9 0-3 2.6-5 3.7-7.9z" fill="#E8833A"/>'
+             '<path d="M12 16.6c1.7 0 3 1.3 3 2.9 0 1.4-1 2.3-1.6 2.3h-2.8c-.6 0-1.6-.9-1.6-2.3 0-1.6 1.3-2.9 3-2.9z" fill="#C9A227"/></svg>')
 
 
-def inject():
-    st.markdown(CSS, unsafe_allow_html=True)
+def esc(x) -> str:
+    return _html.escape(str(x), quote=True)
 
 
-def money(x):
+def money(x) -> str:
     try:
         return f"₹{float(x):,.0f}"
     except (TypeError, ValueError):
         return "—"
 
 
-def panel(col, label, value, sub="", cls=""):
-    sub_html = f'<div class="sub">{sub}</div>' if sub else ""
-    col.markdown(f'<div class="panel"><div class="lbl">{label}</div>'
-                 f'<div class="val {cls}">{value}</div>{sub_html}</div>',
-                 unsafe_allow_html=True)
+def signed_pct(v) -> str:
+    try:
+        return f"{float(v):+.2f}%"
+    except (TypeError, ValueError):
+        return "—"
 
 
 # ------------------------------------------------------------------ loaders
@@ -241,76 +144,239 @@ SOURCE_LABELS = {
     "www.livemint.com": "Livemint",
     "feeds.bbci.co.uk": "BBC Business",
     "www.federalreserve.gov": "US Federal Reserve",
-    "news.google.com": "News mirrors (RBI·SEBI·budget)",
-    "www.reddit.com": "Reddit — IndianStockMarket",
-    "stocktwits": "StockTwits chatter",
-    "manual": "Webhook (manual)",
+    "news.google.com": "News mirrors",
+    "www.reddit.com": "Reddit chatter",
+    "stocktwits": "StockTwits",
+    "manual": "Webhook",
 }
 
 
-# ------------------------------------------------------------------ figures
-def equity_fig(pnl: pd.Series):
+# ==================================================================
+#  SVG charts (pure markup)
+# ==================================================================
+def svg_equity(pnl: pd.Series, w=640, h=185) -> str:
     eq = 500_000.0 + pnl.cumsum()
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=eq.index, y=eq.values, line=dict(color=BRONZE, width=1.7),
-        hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"))
-    fig.add_hline(y=500_000.0, line_color=BORDER2, line_width=1)
-    fig.update_layout(
-        height=300, margin=dict(l=52, r=14, t=8, b=28),
-        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, font=dict(color=MUTED),
-        yaxis=dict(gridcolor="#211E24", tickprefix="₹", tickformat=",.0s",
-                   tickfont=dict(family="JetBrains Mono", size=10), zeroline=False),
-        xaxis=dict(gridcolor="#19171B", tickfont=dict(family="JetBrains Mono", size=10)),
-        showlegend=False, hovermode="x unified")
-    return fig
+    vals = eq.values
+    if len(vals) < 2:
+        return "<div class='empty'>no equity data yet</div>"
+    lo, hi = min(vals.min(), 500_000.0), max(vals.max(), 500_000.0)
+    pad = (hi - lo) * 0.06 or 1
+    lo, hi = lo - pad, hi + pad
+    pts = []
+    for i, v in enumerate(vals):
+        x = 2 + (w - 4) * i / (len(vals) - 1)
+        y = h - 6 - (h - 14) * (v - lo) / (hi - lo)
+        pts.append(f"{x:.1f},{y:.1f}")
+    base_y = h - 6 - (h - 14) * (500_000.0 - lo) / (hi - lo)
+    poly = " ".join(pts)
+    area = f"2,{h - 4} " + poly + f" {w - 2},{h - 4}"
+    col = "#4CAF7D" if vals[-1] >= vals[0] else "#D4635A"
+    return (f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
+            f'style="width:100%;height:{h}px">'
+            f'<line x1="2" y1="{base_y:.1f}" x2="{w - 2}" y2="{base_y:.1f}" '
+            f'stroke="#2A2C31" stroke-dasharray="3 4"/>'
+            f'<polygon points="{area}" fill="{col}" opacity="0.07"/>'
+            f'<polyline points="{poly}" fill="none" stroke="{col}" stroke-width="1.6"/>'
+            f'</svg>')
 
 
-def monthly_cal(pnl: pd.Series):
-    m = pnl.groupby([pnl.index.year, pnl.index.month]).sum().unstack()
-    txt = [[f"{v/1000:+.0f}k" if v == v else "" for v in row] for row in m.values]
-    fig = go.Figure(go.Heatmap(
-        z=m.values, x=[f"M{c}" for c in m.columns], y=m.index.astype(str),
-        colorscale=[[0, "#6E4440"], [0.35, "#3A2A28"], [0.49, "#232126"],
-                    [0.51, "#232C25"], [0.75, "#2C5541"], [1, "#3E7A5B"]],
-        zmid=0, showscale=False, xgap=2, ygap=2, text=txt,
-        texttemplate="%{text}", textfont=dict(family="JetBrains Mono", size=8)))
-    fig.update_layout(height=200, margin=dict(l=6, r=6, t=4, b=4),
-                      paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-                      xaxis=dict(tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
-                      yaxis=dict(tickfont=dict(family="JetBrains Mono", size=9, color=MUTED)))
-    return fig
+def svg_bars(pairs, w=320, h=170) -> str:
+    if not pairs:
+        return "<div class='empty'>no engine data</div>"
+    mx = max(abs(v) for _, v in pairs) or 1
+    rows = []
+    bw = 12
+    for i, (name, v) in enumerate(pairs):
+        y = 16 + i * ((h - 24) // max(len(pairs), 1))
+        ln = max(int((w * 0.42) * abs(v) / mx), 3)
+        col = "#4CAF7D" if v >= 0 else "#D4635A"
+        rows.append(f"<text x='4' y='{y + 9}' class='bl'>{esc(name)}</text>")
+        rows.append(f"<rect x='{w * 0.34}' y='{y}' width='{ln}' height='{bw}' "
+                    f"rx='2' fill='{col}'/>")
+        rows.append(f"<text x='{w * 0.34 + ln + 6}' y='{y + 9}' class='bv'>{money(v)}</text>")
+    return f"<svg viewBox='0 0 {w} {h}' style='width:100%'>" + "".join(rows) + "</svg>"
 
 
-def engine_bars(pnl_df: pd.DataFrame):
-    cols = [c for c in ("iron_fly", "gap", "overnight") if c in pnl_df.columns]
-    if not cols:
-        return None
-    cum = pnl_df[cols].cumsum().iloc[-1].sort_values()
-    names = {"iron_fly": "Iron Fly · Tue 0DTE", "gap": "Gap Reversion",
-             "overnight": "Overnight Drift"}
-    colors = [POS if v >= 0 else NEG for v in cum.values]
-    fig = go.Figure(go.Bar(
-        y=[names.get(k, k) for k in cum.index], x=cum.values, orientation="h",
-        marker=dict(color=colors), width=0.45,
-        text=[money(v) for v in cum.values], textposition="outside",
-        textfont=dict(family="JetBrains Mono", color=MUTED, size=10)))
-    fig.update_layout(height=150, margin=dict(l=6, r=100, t=4, b=4),
-                      paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-                      xaxis=dict(visible=False),
-                      yaxis=dict(tickfont=dict(size=11, color=IVORY)))
-    return fig
+def svg_months(pnl: pd.Series, n=18, w=320, h=168) -> str:
+    if not len(pnl):
+        return "<div class='empty'>no monthly data</div>"
+    m = pnl.groupby([pnl.index.year, pnl.index.month]).sum().tail(n)
+    cells = []
+    cw = (w - 24) / max(len(m), 1)
+    mx = max(abs(v) for v in m.values) or 1
+    for i, (k, v) in enumerate(m.items()):
+        x = 6 + i * cw
+        hh = max(int((h - 42) * abs(v) / mx), 2)
+        y = h - 28 - hh
+        col = "#4CAF7D" if v >= 0 else "#D4635A"
+        cells.append(f"<rect x='{x:.1f}' y='{y}' width='{max(cw - 2, 3):.1f}' "
+                     f"height='{hh}' rx='1.5' fill='{col}' opacity='.85'/>")
+    years = sorted({k[0] for k in m.index})
+    ylab = f"<text x='6' y='{h - 8}' class='bl'>{years[0]} → {years[-1]} · monthly P&L</text>"
+    return f"<svg viewBox='0 0 {w} {h}' style='width:100%'>" + "".join(cells) + ylab + "</svg>"
 
 
-def strow(name, detail, status, dot_cls):
-    return (f'<div class="strow"><span class="dot {dot_cls}"></span>'
-            f'<span class="nm">{name}</span><span class="ds">{detail}</span>'
-            f'<span class="st">{status}</span></div>')
+# ==================================================================
+#  terminal html
+# ==================================================================
+def build_terminal(d) -> str:
+    feed_rows = ""
+    for _, r in d["events"].head(14).iterrows():
+        src = str(r.get("source", "")).split(":")[0]
+        when = str(r.get("seen_at", ""))[11:16]
+        title = esc(str(r.get("title", ""))[:72])
+        imp = int(r.get("impact", 0) or 0)
+        sev = "s3" if imp >= 3 else ("s2" if imp >= 2 else "s1")
+        feed_rows += (f"<div class='frow'><span class='ftm'>{when}</span>"
+                      f"<span class='sev {sev}'></span>"
+                      f"<span class='fsrc'>{esc(SOURCE_LABELS.get(src, src))[:20]}</span>"
+                      f"<span class='fhl'>{title}</span></div>")
+    if not feed_rows:
+        feed_rows = "<div class='empty'>journal empty — argus starts on run</div>"
+
+    pulse_cells = "".join(
+        f"<div class='pc'><span>{esc(k.upper())}</span>"
+        f"<b style='color:{'#D4635A' if v <= -1 else ('#E9E4D6' if abs(v) >= .5 else '#4CAF7D')}'>"
+        f"{signed_pct(v)}</b></div>"
+        for k, v in d["pulse"].get("components", {}).items())
+
+    fills_rows = ""
+    for _, r in d["fills"].head(7).iterrows():
+        side = str(r.get("side", "")).upper()
+        fills_rows += (f"<tr><td>{esc(str(r.get('ts', ''))[5:16])}</td>"
+                       f"<td>{esc(str(r.get('strategy', ''))[:14])}</td>"
+                       f"<td class='{('pos' if side == 'BUY' else 'neg')}'>{esc(side)}</td>"
+                       f"<td>{esc(r.get('qty', ''))}</td>"
+                       f"<td>{money(r.get('px', 0))}</td></tr>")
+    if not fills_rows:
+        fills_rows = ("<tr><td colspan='5' class='empty'>no fills yet — "
+                      "first automated session fires next market open</td></tr>")
+
+    qrows = "".join(
+        f"<div class='qrow'><span class='qn'>{esc(x.get('family', ''))}</span>"
+        f"<span class='qs'>score {esc(x.get('score', '—'))} · OOS {esc(x.get('oos_sharpe', '—'))}</span></div>"
+        for x in d["queue"][:3]) or "<div class='empty'>queue empty</div>"
+
+    pulse = d["pulse"]
+    return f"""<!doctype html><html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+* {{ margin:0; box-sizing:border-box }}
+body {{ background:#0E0F11; color:#E9E4D6; font-family:'Inter',-apple-system,sans-serif; padding:15px 18px }}
+.top {{ display:flex; align-items:center; gap:12px; padding-bottom:11px; border-bottom:1px solid #24262B }}
+.torch {{ width:26px; height:26px; flex-shrink:0 }}
+.brand {{ font-family:'Cinzel',serif; font-weight:700; font-size:1.04rem; letter-spacing:.32em }}
+.mode {{ font-family:'JetBrains Mono',monospace; font-size:.58rem; letter-spacing:.14em;
+         color:#8E8A7F; border:1px solid #2C2E33; border-radius:3px; padding:2px 7px }}
+.clock {{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:.72rem;
+          color:#8E8A7F; text-align:right; line-height:1.6 }}
+.kpis {{ display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-top:12px }}
+.k {{ background:#16171B; border:1px solid #24262B; border-radius:9px; padding:12px 14px }}
+.k .l {{ font-size:.6rem; letter-spacing:.11em; text-transform:uppercase; color:#8E8A7F; font-weight:600 }}
+.k .v {{ font-family:'JetBrains Mono',monospace; font-size:1.28rem; font-weight:600; margin-top:3px }}
+.k .s {{ font-size:.66rem; color:#5F5C55; margin-top:2px }}
+.g {{ color:#4CAF7D }} .r {{ color:#D4635A }} .n {{ color:#E9E4D6 }} .au {{ color:#C9A227 }}
+.grid {{ display:grid; grid-template-columns:repeat(12,1fr); gap:9px; margin-top:9px }}
+.t {{ background:#16171B; border:1px solid #24262B; border-radius:9px; padding:12px 14px; min-width:0 }}
+.t .h {{ font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:#8E8A7F;
+         font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between }}
+.t .h .x {{ color:#5F5C55; font-family:'JetBrains Mono',monospace; letter-spacing:0; text-transform:none }}
+.c8 {{ grid-column:span 8 }} .c7 {{ grid-column:span 7 }} .c6 {{ grid-column:span 6 }}
+.c5 {{ grid-column:span 5 }} .c4 {{ grid-column:span 4 }} .c3 {{ grid-column:span 3 }}
+.frow {{ display:flex; gap:9px; padding:4px 0; border-bottom:1px solid #1C1E22;
+         font-family:'JetBrains Mono',monospace; font-size:.69rem }}
+.ftm {{ color:#5F5C55; width:38px }} .fsrc {{ color:#8E8A7F; width:104px; overflow:hidden;
+text-overflow:ellipsis; white-space:nowrap }} .fhl {{ color:#E9E4D6; overflow:hidden;
+text-overflow:ellipsis; white-space:nowrap }}
+.sev {{ width:7px; height:7px; border-radius:2px; margin-top:5px; flex-shrink:0 }}
+.s3 {{ background:#D4635A }} .s2 {{ background:#C9A227 }} .s1 {{ background:#33353B }}
+.empty {{ color:#5F5C55; font-size:.7rem; padding:5px 0 }}
+.pcs {{ display:grid; grid-template-columns:repeat(2,1fr); gap:7px }}
+.pc {{ background:#121316; border:1px solid #222428; border-radius:7px; padding:7px 10px }}
+.pc span {{ font-size:.54rem; letter-spacing:.1em; text-transform:uppercase; color:#8E8A7F }}
+.pc b {{ font-family:'JetBrains Mono',monospace; font-size:.9rem; display:block; margin-top:2px }}
+.score {{ font-family:'JetBrains Mono',monospace; font-size:1.9rem; font-weight:600 }}
+.bl {{ font-family:'JetBrains Mono',monospace; font-size:.68rem; fill:#8E8A7F }}
+.bv {{ font-family:'JetBrains Mono',monospace; font-size:.68rem; fill:#E9E4D6 }}
+.srow {{ display:flex; align-items:center; gap:12px; padding:10px 2px; border-bottom:1px solid #1C1E22 }}
+.srow:last-child {{ border-bottom:none }}
+.srow .nm {{ font-family:'Cinzel',serif; letter-spacing:.2em; font-size:.8rem; width:84px; color:#E9E4D6 }}
+.srow .ds {{ color:#8E8A7F; font-size:.73rem; flex:1 }}
+.srow .st {{ font-family:'JetBrains Mono',monospace; font-size:.6rem; letter-spacing:.12em;
+             display:flex; align-items:center; gap:6px }}
+.sdot {{ width:7px; height:7px; border-radius:50%; flex-shrink:0 }}
+table {{ width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:.69rem }}
+th {{ color:#8E8A7F; text-transform:uppercase; font-size:.56rem; letter-spacing:.1em;
+      text-align:left; padding:4px 6px; border-bottom:1px solid #24262B }}
+td {{ padding:5px 6px; border-bottom:1px solid #1C1E22; color:#E9E4D6 }}
+.pos {{ color:#4CAF7D }} .neg {{ color:#D4635A }}
+.qrow {{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #1C1E22 }}
+.qn {{ font-family:'Cinzel',serif; letter-spacing:.14em; color:#E9E4D6; font-size:.74rem }}
+.qs {{ font-family:'JetBrains Mono',monospace; color:#8E8A7F; font-size:.64rem }}
+.rules {{ font-size:.68rem; color:#8E8A7F; line-height:1.95 }}
+.sw2 {{ display:inline-block; width:7px; height:7px; border-radius:2px; margin:0 5px 0 8px }}
+.foot {{ margin-top:14px; padding-top:12px; border-top:1px solid #24262B; text-align:center;
+         font-size:.64rem; color:#5F5C55 }}
+.foot b {{ color:#8E8A7F; font-family:'Cinzel',serif; letter-spacing:.24em }}
+@media(max-width:1000px) {{ .kpis {{grid-template-columns:repeat(2,1fr)}} .c8,.c7,.c6,.c5,.c4,.c3 {{grid-column:span 12}} }}
+</style></head><body>
+
+<div class="top">
+  {TORCH_SVG}
+  <span class="brand">PROMETHEVS</span>
+  <span class="mode">PAPER</span>
+  <div class="clock"><span id="clock">--:--:--</span> IST<br>{esc(d["mkt"])} · {esc(d["mkt_sub"])} · {esc(d["date_str"])}</div>
+</div>
+
+<div class="kpis">
+  <div class="k"><div class="l">Core engine trust</div><div class="v g">{esc(d["trust"])}</div><div class="s">iron fly OOS · from Jan 2024</div></div>
+  <div class="k"><div class="l">Book CAGR · OOS</div><div class="v g">{esc(str(d["cagr"]))}%</div><div class="s">combined engines</div></div>
+  <div class="k"><div class="l">Simulated P&L</div><div class="v g">{esc(d["totalpnl"])}</div><div class="s">{esc(str(d["years"]))} years · all costs</div></div>
+  <div class="k"><div class="l">Ideas tested</div><div class="v au">{esc(d["tested"])}</div><div class="s">{esc(d["killed"])} killed · {esc(d["qcount"])} in queue</div></div>
+</div>
+
+<div class="grid">
+  <div class="t c8"><div class="h">Equity · ₹5L start <span class="x">simulated · full costs</span></div>{d["eqsvg"]}</div>
+  <div class="t c4"><div class="h">Engines · cumulative P&L</div>{d["bars"]}</div>
+
+  <div class="t c6"><div class="h">Argus live feed <span class="x">{esc(d["feedcount"])} items · 13 sources</span></div>{feed_rows}</div>
+
+  <div class="t c3"><div class="h">Global pulse</div>
+    <div class="score" style="color:{esc(d["pulse_col"])}">{esc(str(d["pulse_score"]))}<span style="font-size:.85rem;color:#5F5C55">/100</span></div>
+    <div style="font-size:.62rem;color:{esc(d["pulse_col"])};letter-spacing:.16em;margin-bottom:8px">{esc(str(d["pulse_level"]).upper())}</div>
+    <div class="pcs">{pulse_cells}</div></div>
+
+  <div class="t c3"><div class="h">Monthly P&L</div>{d["months"]}</div>
+
+  <div class="t c7"><div class="h">System status</div>
+    <div class="srow"><span class="sdot" style="background:{esc(d["ember_dot"])}"></span><span class="nm">EMBER</span><span class="ds">{esc(d["ember_det"])}</span><span class="st">{esc(d["ember_st"])}</span></div>
+    <div class="srow"><span class="sdot" style="background:#4CAF7D"></span><span class="nm">ANVIL</span><span class="ds">{esc(d["anvil_det"])}</span><span class="st">ACTIVE</span></div>
+    <div class="srow"><span class="sdot" style="background:{esc(d["argus_dot"])}"></span><span class="nm">ARGVS</span><span class="ds">{esc(d["argus_det"])}</span><span class="st">{esc(d["argus_st"])}</span></div>
+    <div class="rules" style="margin-top:10px">
+      <span class="sw2" style="background:#D4635A"></span>STOP — war · RBI shock · halt → force-flat
+      <span class="sw2" style="background:#C9A227"></span>PAUSE — SEBI · tariffs → no new entries
+      <span class="sw2" style="background:#33353B"></span>logged — no action
+    </div></div>
+
+  <div class="t c5"><div class="h">Recent paper fills</div>
+    <table><tr><th>time</th><th>engine</th><th>side</th><th>qty</th><th>price</th></tr>{fills_rows}</table></div>
+
+  <div class="t c6"><div class="h">Next into the fire <span class="x">live-test queue</span></div>{qrows}</div>
+  <div class="t c6"><div class="h">Graveyard <span class="x">killed by evidence</span></div>
+    <div class="rules">{esc(d["graveyard"])}</div></div>
+</div>
+
+<div class="foot"><b>PROMETHEVS</b> · powered by <b style="color:#8E8A7F">GLM 5.3 Flash</b> ·
+simulated results · not financial advice</div>
+
+<script>
+setInterval(()=>{{const e=document.getElementById('clock');if(e){{e.textContent=
+new Date().toLocaleTimeString('en-GB',{{timeZone:'Asia/Kolkata'}});}}}},1000);
+</script>
+</body></html>"""
 
 
-# -------------------------------------------------------------------- main
-def main():
-    inject()
+@st.fragment(run_every="45s")
+def terminal_fragment():
     report = load_json("results/backtest_report.json")
     pnl_df = load_pnl()
     ledger = load_csv("results/atlas/ledger.csv")
@@ -319,7 +385,7 @@ def main():
     state = load_session_state()
     ev_cfg = load_feeds_cfg()
     news = fetch_argus("status")
-    pulse = fetch_argus("pulse")
+    pulse = fetch_argus("pulse") or {"score": 0, "level": "calm", "components": {}}
     events_db = load_news_events()
     now = datetime.now(IST)
     mkt, live, mkt_sub = market_status()
@@ -336,274 +402,60 @@ def main():
             fills_today = 0
     sess_today = bool(state) and state.get("date") == now.date().isoformat()
 
-    # ---------------------------------------------------------- brand bar
-    st.markdown(
-        f'<div class="brandbar">{TORCH_SVG}'
-        f'<span class="name">PROMETHEVS</span>'
-        f'<span class="tag">the one who saw tomorrow first</span>'
-        f'<span class="pill"><span class="dot {"#5FA97C" if live else "#6E6A5E"}"></span>{mkt}</span>'
-        f'<span class="pill"><span class="dot {"#5FA97C" if argus_on else "#6E6A5E"}"></span>ARGVS '
-        f'{"ON" if argus_on else "OFF"}</span>'
-        f'<div class="meta">{now.strftime("%a %d %b · %H:%M IST")}</div></div>',
-        unsafe_allow_html=True)
-
-    # ------------------------------------------------------------- hero
-    iron_oos = report.get("iron_fly", {}).get("oos", {})
+    iron = report.get("iron_fly", {}).get("oos", {})
     oos_comb = report.get("combined", {}).get("oos", {})
     comb = report.get("combined", {}).get("full", {})
-    h1, h2 = st.columns([1.25, 0.75])
-    with h1:
-        st.markdown(
-            f'<div class="hero" style="flex-direction:column">'
-            f'<div class="greek">Ideas go into the fire.<br>'
-            f'<span class="accent">What remains, trades.</span></div>'
-            f'<div class="motto">ΠΡΟΜΗΘΕΥΣ · FORETHOUGHT · FIRE · FORTVNE</div>'
-            f'<div class="line">A self-evolving system for NSE index derivatives. '
-            f'Every idea is tested against years of real market data with every fee '
-            f'counted; losers are killed permanently, survivors rehearse with paper '
-            f'money before any rupee moves.</div>'
-            f'<div style="display:flex;gap:12px;margin-top:18px">'
-            f'<div class="panel" style="flex:1"><div class="lbl">Core engine trust</div>'
-            f'<div class="val pos">{iron_oos.get("sharpe","—")}</div>'
-            f'<div class="sub">OOS · from Jan 2024</div></div>'
-            f'<div class="panel" style="flex:1"><div class="lbl">Book CAGR</div>'
-            f'<div class="val pos">{oos_comb.get("cagr_pct","—")}%</div>'
-            f'<div class="sub">recent regime</div></div>'
-            f'<div class="panel" style="flex:1"><div class="lbl">Simulated P&L</div>'
-            f'<div class="val pos">{money(comb.get("total_pnl",0))}</div>'
-            f'<div class="sub">{comb.get("years","—")} yrs · all costs in</div></div>'
-            f'<div class="panel" style="flex:1"><div class="lbl">Ideas tested</div>'
-            f'<div class="val neu">{len(ledger):,}</div>'
-            f'<div class="sub">ledger · {ledger_ts}</div></div>'
-            f'</div></div>', unsafe_allow_html=True)
-    with h2:
-        img = ROOT / "assets" / "prometheus_marble.jpg"
-        if img.exists():
-            st.image(str(img), use_container_width=True)
-            st.caption("Marble group — the freeing of Prometheus (Pergamon) · "
-                       "photo: Mark Landon, Wikimedia Commons, CC BY 4.0")
+    shp = float(iron.get("sharpe") or 0.0)
 
-    # --------------------------------------------------------- status strip
-    st.markdown('<div class="sec">System</div>', unsafe_allow_html=True)
-    st.markdown(
-        strow("EMBER", f"Execution engines · {fills_today} trades today · "
-                       f"{'in session' if sess_today else 'idle until next open'}",
-              "RUNNING" if sess_today else "SCHEDULED", "d-on" if sess_today else "d-warn")
-        + strow("ANVIL", f"Research lab · {len(ledger):,} ideas tested · "
-                         f"{len(queue)} awaiting live rehearsal",
-                "ACTIVE", "d-on")
-        + strow("ARGUS", f"24/7 watchman · {len(ev_cfg.get('feeds', []))} sources · "
-                         f"{news.get('headlines_seen', 0) if news else 0} items in memory",
-                "ONLINE" if argus_on else "OFFLINE", "d-on" if argus_on else "d-off"),
-        unsafe_allow_html=True)
+    engine_pairs = []
+    for eng, nm in (("iron_fly", "Iron Fly"), ("gap", "Gap"), ("overnight", "Overnight")):
+        v = 0.0
+        if not pnl_df.empty and eng in pnl_df.columns:
+            v = float(pnl_df[eng].cumsum().iloc[-1])
+        engine_pairs.append((nm, v))
 
-    if st.button("Refresh", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+    graveyard = ("Donchian · NR7 coils · golden cross · pairs stat-arb · US-lag pickup · "
+                 "time-of-day calendar · compression ORB · raw streaks · VWAP fade · "
+                 "52w-high · calm-bounce · low-vol grind · daily breakout")
 
-    tabs = st.tabs(["NEWS WATCH", "PORTFOLIO", "RESEARCH", "GUIDE"])
+    html_out = build_terminal({
+        "mkt": mkt, "mkt_sub": mkt_sub, "date_str": now.strftime("%a %d %b %H:%M"),
+        "trust": "—" if not iron else f"{min(shp / 1.5, 5.0):.1f} / 5",
+        "cagr": oos_comb.get("cagr_pct", "—"),
+        "totalpnl": money(comb.get("total_pnl", 0)),
+        "years": comb.get("years", "—"),
+        "tested": f"{len(ledger):,}", "killed": f"{len(ledger) - len(queue):,}",
+        "qcount": len(queue),
+        "eqsvg": svg_equity(pnl_df["combined"]) if not pnl_df.empty and "combined" in pnl_df.columns
+                 else "<div class='empty'>run scripts/run_backtest.py first</div>",
+        "bars": svg_bars(engine_pairs),
+        "events": events_db, "feedcount": len(events_db),
+        "pulse": pulse,
+        "pulse_score": pulse.get("score", 0),
+        "pulse_level": pulse.get("level", "calm"),
+        "pulse_col": {"calm": "#4CAF7D", "elevated": "#C9A227",
+                      "risk_off": "#D4635A"}.get(pulse.get("level", "calm"), "#4CAF7D"),
+        "months": svg_months(pnl_df["combined"]) if not pnl_df.empty and "combined" in pnl_df.columns
+                  else "<div class='empty'>no data</div>",
+        "ember_det": f"Execution engines · {fills_today} trades today · "
+                     f"{'in session' if sess_today else 'idle until next open'}",
+        "ember_st": "RUNNING" if sess_today else "SCHEDULED",
+        "ember_dot": "#4CAF7D" if sess_today else "#C9A227",
+        "anvil_det": f"{len(ledger):,} ideas tested · {len(queue)} in live-test queue · ledger {ledger_ts}",
+        "argus_det": f"{len(ev_cfg.get('feeds', []))} sources · "
+                     f"{news.get('headlines_seen', 0) if news else 0} items in memory",
+        "argus_st": "ONLINE" if argus_on else "OFFLINE",
+        "argus_dot": "#4CAF7D" if argus_on else "#6E6A5E",
+        "fills": fills,
+        "queue": queue,
+        "graveyard": graveyard,
+    })
+    components.v1.html(html_out, height=1010, scrolling=False)
 
-    # ------------------------------------------------------------ NEWS WATCH
-    with tabs[0]:
-        if pulse:
-            comps = pulse.get("components", {})
-            lvl = pulse.get("level", "calm")
-            color = {"calm": POS, "elevated": WARN, "risk_off": NEG}.get(lvl, POS)
-            st.markdown(
-                f'<div class="panel" style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">'
-                f'<div><div class="lbl">Global pulse · overnight markets</div>'
-                f'<div class="val" style="color:{color}">{pulse.get("score")}/100 · {lvl.upper()}</div></div>'
-                f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin-left:auto">'
-                + "".join(f'<div><span style="font-size:.6rem;color:{FAINT};text-transform:'
-                          f'uppercase;letter-spacing:.1em">{k}</span><br>'
-                          f'<span style="font-family:JetBrains Mono,monospace;font-weight:600;'
-                          f'color:{NEG if v <= -1 else (IVORY if abs(v) >= .5 else POS)}">{v:+.2f}%</span></div>'
-                          for k, v in comps.items())
-                + '</div></div>', unsafe_allow_html=True)
-        else:
-            st.error("ARGVS is offline — `bash scripts/argus.sh start`")
 
-        st.markdown('<div class="sec">Live feed · latest reads</div>',
-                    unsafe_allow_html=True)
-        if len(events_db):
-            rows = ""
-            for _, r in events_db.head(30).iterrows():
-                src = str(r.get("source", "")).split(":")[0]
-                when = str(r.get("seen_at", r.get("ts", "")))[11:16]
-                title = str(r.get("title", ""))[:100].replace("<", "&lt;")
-                imp = int(r.get("impact", 0) or 0)
-                sev = "s3" if imp >= 3 else ("s2" if imp >= 2 else "s1")
-                rows += (f'<div class="row"><span class="tm">{when}</span>'
-                         f'<span class="sev {sev}"></span><span class="src">'
-                         f'{SOURCE_LABELS.get(src, src)[:26]}</span>'
-                         f'<span class="hl">{title}</span></div>')
-            st.markdown(f'<div class="panel feed">{rows}</div>', unsafe_allow_html=True)
-        else:
-            st.caption("Journal empty — starts when ARGVS runs.")
-
-        st.markdown('<div class="sec">Sources</div>', unsafe_allow_html=True)
-        feeds = ev_cfg.get("feeds", [])
-        srows = []
-        for url in feeds:
-            host = url.split("/")[2] if url.count("/") >= 2 else url
-            cnt = int((events_db["source"].str.split(":").str[0] == host).sum()) \
-                if len(events_db) else 0
-            srows.append({"source": SOURCE_LABELS.get(host, host), "items (6h)": cnt})
-        st.dataframe(pd.DataFrame(srows), use_container_width=True, hide_index=True,
-                     height=330)
-
-        st.markdown('<div class="sec">Response rules</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-<div class="legend">
-<span class="sw" style="background:{NEG}"></span><b>STOP</b> — war · RBI shock · budget surprise · trading halt → force-flat, stay out<br>
-<span class="sw" style="background:{BRONZE}"></span><b>PAUSE</b> — SEBI action · tariffs · rating cuts → no new entries<br>
-<span class="sw" style="background:#3B3840"></span><b>logged</b> — everything else is journaled, no action
-</div>""", unsafe_allow_html=True)
-
-    # ------------------------------------------------------------- PORTFOLIO
-    with tabs[1]:
-        rows = []
-        for eng, label, story in (
-                ("iron_fly", "Iron Fly · Tue 0DTE", "sells defined-risk option combos on expiry day"),
-                ("gap", "Gap Reversion", "fades abnormal openings toward prior close"),
-                ("overnight", "Overnight Drift", "overnight long only when fear is high")):
-            blk = (report.get(eng, {}).get("oos")
-                   or report.get(eng, {}).get("is")
-                   or report.get(eng, {}).get("full", {}))
-            shp = float(blk.get("sharpe") or 0.0)
-            rows.append({"engine": label, "thesis": story,
-                         "trust (0–5)": "—" if not blk else f"{min(shp / 1.5, 5.0):.1f}",
-                         "win rate": f"{blk.get('win_rate_pct', '—')}%",
-                         "worst day": money(blk.get("worst_day", 0)),
-                         "trades": blk.get("trade_days", "—")})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        st.caption("trust = Sharpe ÷ 1.5 on data the engines never saw during design (Jan 2024 →)")
-
-        if not pnl_df.empty and "combined" in pnl_df.columns:
-            st.markdown('<div class="sec">Equity · ₹5L start (simulated, full costs)</div>',
-                        unsafe_allow_html=True)
-            st.plotly_chart(equity_fig(pnl_df["combined"]), use_container_width=True)
-            st.markdown('<div class="sec">Monthly P&L</div>', unsafe_allow_html=True)
-            st.plotly_chart(monthly_cal(pnl_df["combined"]), use_container_width=True)
-
-        bars = engine_bars(pnl_df) if not pnl_df.empty else None
-        if bars:
-            st.markdown('<div class="sec">Per-engine cumulative P&L</div>',
-                        unsafe_allow_html=True)
-            st.plotly_chart(bars, use_container_width=True)
-
-        st.markdown('<div class="sec">Risk envelope · always armed</div>',
-                    unsafe_allow_html=True)
-        import yaml as _yaml
-        risk = {}
-        cfgp = ROOT / "config" / "settings.yaml"
-        if cfgp.exists():
-            try:
-                risk = (_yaml.safe_load(cfgp.read_text()) or {}).get("risk", {})
-            except Exception:
-                pass
-        st.markdown(f"""
-<div class="legend" style="background:{SURFACE};border:1px solid {BORDER};
-border-radius:8px;padding:12px 18px">
-daily kill <b style="color:{IVORY}">{risk.get('daily_loss_kill_pct', 2)}%</b>
-&nbsp;·&nbsp; weekly kill <b style="color:{IVORY}">{risk.get('weekly_loss_kill_pct', 4)}%</b>
-&nbsp;·&nbsp; per-trade risk <b style="color:{IVORY}">{risk.get('risk_per_trade_pct', 1)}%</b>
-&nbsp;·&nbsp; leverage <b style="color:{IVORY}">{risk.get('max_lots_per_10l', 3)} lots / ₹10L</b>
-&nbsp;·&nbsp; theta gate VIX <b style="color:{IVORY}">≤ {risk.get('vix_max_for_theta', 22)}</b>
-</div>""", unsafe_allow_html=True)
-
-        st.markdown('<div class="sec">Session book</div>', unsafe_allow_html=True)
-        if state:
-            s1, s2, s3 = st.columns(3)
-            panel(s1, "Session date", str(state.get("date", "—")))
-            panel(s2, "Realized today", money(state.get("realized", 0)),
-                  cls="pos" if state.get("realized", 0) >= 0 else "neg")
-            pos = state.get("positions", {})
-            panel(s3, "Open positions", str(len(pos)))
-            if pos:
-                st.dataframe(pd.DataFrame(
-                    [{"strategy": k, **{kk: vv for kk, vv in v.items() if kk != "legs"}}
-                     for k, v in pos.items()]),
-                    use_container_width=True, hide_index=True)
-        else:
-            st.caption("No session yet today.")
-
-        if len(fills):
-            st.markdown('<div class="sec">Recent fills</div>', unsafe_allow_html=True)
-            cols = [c for c in ("ts", "strategy", "side", "qty", "px") if c in fills.columns]
-            st.dataframe(fills[cols], use_container_width=True, height=250)
-
-    # -------------------------------------------------------------- RESEARCH
-    with tabs[2]:
-        st.markdown(f"""
-<div class="panel" style="display:flex;gap:40px;flex-wrap:wrap">
-<div><div class="lbl">Ideas tested</div><div class="val neu">{len(ledger):,}</div></div>
-<div><div class="lbl">Passed</div><div class="val pos">{len(queue)}</div></div>
-<div><div class="lbl">Killed</div><div class="val neg">{len(ledger)-len(queue):,}</div></div>
-<div><div class="lbl">Survival rate</div><div class="val au">{(len(queue)/max(len(ledger),1)*100):.1f}%</div></div>
-</div>""", unsafe_allow_html=True)
-        st.caption("Every candidate runs 12+ years of real data with the full Indian cost "
-                   "stack. Conviction ≥ 0.60 promotes to paper. Losers are recorded forever.")
-
-        st.markdown('<div class="sec">Live-test queue · paper next</div>',
-                    unsafe_allow_html=True)
-        if queue:
-            qdf = pd.DataFrame(queue)
-            cols = [c for c in ("family", "params", "score", "oos_sharpe",
-                                "oos_cagr_pct", "n_trades", "quarters_hit")
-                    if c in qdf.columns]
-            st.dataframe(qdf[cols], use_container_width=True, hide_index=True)
-        else:
-            st.caption("Queue empty — run scripts/evolve.py for the next generation.")
-
-        if len(ledger):
-            best = ledger.sort_values("score", ascending=False).groupby("family").head(1) \
-                .sort_values("score", ascending=False)
-            st.markdown('<div class="sec">Family leaderboard</div>', unsafe_allow_html=True)
-            pick = st.selectbox("family", best["family"].tolist(),
-                                label_visibility="collapsed")
-            drill = ledger[ledger["family"] == pick].sort_values("score", ascending=False)
-            dcols = [c for c in ("params", "filter", "exit", "score", "full_sharpe",
-                                 "oos_sharpe", "oos_cagr_pct", "oos_max_dd_pct",
-                                 "oos_pf", "n_trades", "promoted") if c in drill.columns]
-            st.dataframe(drill[dcols], use_container_width=True, hide_index=True)
-            st.markdown('<div class="sec">The graveyard</div>', unsafe_allow_html=True)
-            wl = best[(best["score"] >= 0.45) & (best["score"] < 0.60)]
-            if len(wl):
-                st.caption("On the bubble: " + ", ".join(wl["family"]))
-            with st.expander("all killed families + evidence"):
-                st.dataframe(best[["family", "params", "exit", "score", "oos_sharpe",
-                                   "n_trades"]], use_container_width=True, hide_index=True)
-
-    # ----------------------------------------------------------------- GUIDE
-    with tabs[3]:
-        st.markdown(f"""
-<div class="legend" style="background:{SURFACE};border:1px solid {BORDER};
-border-radius:8px;padding:18px 22px;font-size:.85rem">
-<b style="color:{IVORY};font-family:Cinzel,serif;letter-spacing:.18em">HOW THE FIRE IS USED</b><br><br>
-1. <b style="color:{IVORY}">No guessing.</b> Every idea is tested against 12+ years of real NSE data
-with every fee, tax, and slippage counted. Most ideas lose — those are killed permanently.<br><br>
-2. <b style="color:{IVORY}">Survivors rehearse first.</b> Weeks of paper trading in the live market
-before a single real rupee moves — live results must match the backtest within 30%.<br><br>
-3. <b style="color:{IVORY}">Trade by schedule, not mood.</b> Tuesday expiry premium-selling (the
-proven earner), rare gap fades, overnight exposure only when fear is measurably high.<br><br>
-4. <b style="color:{IVORY}">The watchman overrides everything.</b> War, shock hike, or halt → close and wait.<br><br>
-5. <b style="color:{IVORY}">Losses have hard ceilings.</b> −2% a day / −4% a week and the machine stops itself.
-</div>""", unsafe_allow_html=True)
-        st.markdown('<div class="sec">Operations</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-<div class="legend" style="background:{SURFACE};border:1px solid {BORDER};
-border-radius:8px;padding:14px 18px">
-<code>bash scripts/launch.sh</code> — dashboard + watchman, one command<br>
-<code>.venv/bin/python scripts/run_paper.py --mode paper</code> — manual session<br>
-<code>.venv/bin/python scripts/evolve.py</code> — force a research generation<br>
-<code>bash scripts/argus.sh status</code> — watchman health
-</div>""", unsafe_allow_html=True)
-
-    st.markdown('<div class="foot"><span class="nm">PROMETHEVS</span> · powered by '
-                '<b style="color:{m}">GLM 5.3 Flash</b> · simulated results, full '
-                'cost stack · not financial advice</div>'.replace("{m}", MUTED),
-                unsafe_allow_html=True)
+def main():
+    st.markdown("", unsafe_allow_html=True)
+    terminal_fragment()
 
 
 if __name__ == "__main__":

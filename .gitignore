@@ -16,3 +16,10 @@ logs/session_state.json
 logs/news.db
 .env
 logs/*.json
+
+# runtime output (sessions, pids, tunnel urls, state) - never commit
+logs/
+.env
+.env.*
+!.env.example
+secrets*.json
